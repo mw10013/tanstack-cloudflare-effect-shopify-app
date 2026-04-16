@@ -125,7 +125,7 @@ function RouteComponent() {
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">tanstack-cloudflare-effect-shopify-app</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-slate-600">
           Server functions + TanStack Form + useMutation + Effect v4 + D1 + KV
         </p>
       </header>
@@ -167,7 +167,7 @@ function RouteComponent() {
       </section>
 
       <section className="rounded-lg border p-4">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-slate-600">
           Last KV write: {lastCreatedAt}
         </p>
       </section>
@@ -175,13 +175,13 @@ function RouteComponent() {
       <section className="rounded-lg border p-4">
         <h2 className="mb-3 text-lg font-medium">Todos</h2>
         {todos.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No todos yet.</p>
+          <p className="text-sm text-slate-600">No todos yet.</p>
         ) : (
           <ul className="space-y-2">
             {todos.map((todo) => (
               <li key={todo.id} className="rounded-md border p-3">
                 <p className="font-medium">{todo.title}</p>
-                <p className="text-xs text-muted-foreground">{todo.createdAt}</p>
+                <p className="text-xs text-slate-600">{todo.createdAt}</p>
               </li>
             ))}
           </ul>
