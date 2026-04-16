@@ -8,7 +8,8 @@ const OUTPUT_ROOT = path.join("refs", "shopify-docs");
 const ADMIN_PREFIX = `${ORIGIN}/docs/api/admin-graphql/latest`;
 const APPS_BUILD_PREFIX = `${ORIGIN}/docs/apps/build`;
 const SITEMAP_URL = `${ORIGIN}/sitemap_standard.xml.gz`;
-const USER_AGENT = "product-health-check/refs-shopify-docs";
+const USER_AGENT =
+  "tanstack-cloudflare-effect-shopify-app/refs-shopify-docs (+https://github.com/mw10013/tanstack-cloudflare-effect-shopify-app)";
 
 type DocSection = "admin-graphql" | "apps-build";
 
