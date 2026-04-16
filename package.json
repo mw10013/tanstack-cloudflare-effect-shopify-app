@@ -33,6 +33,7 @@
     "d1:migrate:apply:PRODUCTION": "wrangler d1 migrations apply shopify-app-d1-production --env production --remote",
     "d1:reset": "node scripts/d1-reset.ts",
     "d1:reset:PRODUCTION": "node scripts/d1-reset.ts --env production",
+    "clone:links": "[ ! -e refs ] && ln -s ../tanstack-cloudflare-effect-shopify-app/refs refs; [ ! -e todo.md ] && ln -s ../tanstack-cloudflare-effect-shopify-app/todo.md todo.md",
     "refs:shadcn": "rm -rf refs/shadcn && mkdir -p refs/shadcn && curl -L https://github.com/shadcn-ui/ui/archive/refs/tags/shadcn@3.8.5.tar.gz | tar -xz -C refs/shadcn --strip-components=1",
     "refs:base-ui": "rm -rf refs/base-ui && mkdir -p refs/base-ui && curl -L https://github.com/mui/base-ui/archive/refs/tags/v1.2.0.tar.gz | tar -xz -C refs/base-ui --strip-components=1",
     "refs:agents": "rm -rf refs/agents && mkdir -p refs/agents && curl -L https://github.com/cloudflare/agents/archive/refs/tags/agents@0.10.0.tar.gz | tar -xz -C refs/agents --strip-components=1",
@@ -48,7 +49,13 @@
     "refs:effect4": "rm -rf refs/effect4 && mkdir -p refs/effect4 && curl -L https://github.com/Effect-TS/effect-smol/archive/refs/tags/effect@4.0.0-beta.47.tar.gz | tar -xz -C refs/effect4 --strip-components=1",
     "refs:vitest": "rm -rf refs/vitest && mkdir -p refs/vitest && curl -L https://github.com/vitest-dev/vitest/archive/refs/tags/v4.1.4.tar.gz | tar -xz -C refs/vitest --strip-components=1",
     "refs:workers-sdk": "rm -rf refs/workers-sdk && mkdir -p refs/workers-sdk && curl -L https://github.com/cloudflare/workers-sdk/archive/refs/tags/wrangler@4.81.1.tar.gz | tar -xz -C refs/workers-sdk --strip-components=1",
-    "clone:links": "[ ! -e refs ] && ln -s ../tanstack-cloudflare-effect-shopify-app/refs refs; [ ! -e todo.md ] && ln -s ../tanstack-cloudflare-effect-shopify-app/todo.md todo.md"
+    "refs:react-router": "rm -rf refs/react-router && mkdir -p refs/react-router && curl -L https://github.com/remix-run/react-router/archive/refs/tags/react-router@7.14.1.tar.gz | tar -xz -C refs/react-router --strip-components=1",
+    "refs:tces": "rm -rf refs/tces && mkdir -p refs/tces && curl -L https://github.com/mw10013/tanstack-cloudflare-effect-saas/archive/refs/heads/main.tar.gz | tar -xz -C refs/tces --strip-components=1",
+    "refs:shopify-bridge": "rm -rf refs/shopify-bridge && mkdir -p refs/shopify-bridge && curl -L https://github.com/Shopify/shopify-app-bridge/archive/refs/heads/main.tar.gz | tar -xz -C refs/shopify-bridge --strip-components=1",
+    "refs:shopify-rr": "rm -rf refs/shopify-rr && mkdir -p refs/shopify-rr && curl -L https://github.com/Shopify/shopify-app-js/archive/refs/tags/@shopify/shopify-app-react-router@1.2.0.tar.gz | tar -xz -C refs/shopify-rr --strip-components=1",
+    "refs:shopify-session-prisma": "rm -rf refs/shopify-session-prisma && mkdir -p refs/shopify-session-prisma && curl -L https://github.com/Shopify/shopify-app-js/archive/refs/tags/@shopify/shopify-app-session-storage-prisma@8.0.1.tar.gz | tar -xz -C refs/shopify-session-prisma --strip-components=1",
+    "refs:shopify-codegen": "rm -rf refs/shopify-codegen && mkdir -p refs/shopify-codegen && curl -L https://github.com/Shopify/shopify-app-js/archive/refs/tags/@shopify/api-codegen-preset@1.2.2.tar.gz | tar -xz -C refs/shopify-codegen --strip-components=1",
+    "refs:shopify-docs": "node scripts/refs-shopify-docs.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.2.0",
