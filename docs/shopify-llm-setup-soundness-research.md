@@ -2,6 +2,8 @@
 
 ## Input under review
 
+The section below is preserved verbatim as reviewed input and includes known-outdated statements. Use the `Not sound or outdated` and `Critical correction from live setup (2026-04-16)` sections as the authoritative guidance.
+
 # Shopify App Setup on Cloudflare + TanStack Start (non-template)
 
 ## Key Files Needed
@@ -162,6 +164,14 @@ Mixed. Some parts are sound, several parts are outdated or too absolute for this
 
 - If the immediate goal is "port what template does," keep `SCOPES` from env for now and avoid hard-coded scopes.
 - Revisit scope source-of-truth once migrating from authorization-code-grant to managed-install + token-exchange.
+
+## Critical correction from live setup (2026-04-16)
+
+- The current Shopify UI path for credentials is **Dev Dashboard**, not the Partner app's `API access requests` page. In that page, Shopify now links out: `Find API credentials ... in your Dev Dashboard`.
+- Docs match this path exactly: `Open your app in the Dev Dashboard -> Settings -> Copy Client ID and Client secret` (`refs/shopify-docs/docs/apps/build/dev-dashboard/get-api-access-tokens.md:55-57`).
+- In this repo, `SHOPIFY_API_KEY` should match the app `client_id` persisted in `.shopify-cli/shopify.app.toml` (`.shopify-cli/shopify.app.toml:3`), and `SHOPIFY_API_SECRET` should be the Dev Dashboard `Secret` value (`src/lib/Shopify.ts:49-50`).
+- If a secret is exposed in screenshots/logs, rotate immediately in Dev Dashboard and update `.env`.
+- Shopify preview can fail with Vite host filtering (`Blocked request. This host ... is not allowed`) when tunnel hostnames change. Fix is to allow Shopify tunnel hosts in Vite dev server allowlist (`vite.config.ts`).
 
 ## What to do now for TOML files in this repo
 

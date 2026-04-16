@@ -245,7 +245,14 @@ shopify app env pull --path .shopify-cli --env-file .env
 
    - this updates `.env` with `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SCOPES`
    - command capability docs:
-      - `shopify app env pull --help`
+       - `shopify app env pull --help`
+
+2.1 **If credentials are stale or missing, get them from Dev Dashboard settings**
+   - current UI path: `Dev Dashboard -> Apps -> <app> -> Settings -> Credentials`
+   - Shopify docs path: `Open your app in the Dev Dashboard -> Settings -> Copy Client ID and Client secret`:
+      - `refs/shopify-docs/docs/apps/build/dev-dashboard/get-api-access-tokens.md:55-57`
+   - sanity check: `.shopify-cli/shopify.app.toml` `client_id` should equal `.env` `SHOPIFY_API_KEY`
+   - note: Partner app page `API access requests` now links to Dev Dashboard for credentials (does not show the secret itself)
 
 3. **Confirm this repo is not using the `phc` app ID**
    - verify `.shopify-cli/shopify.app.toml` has a different `client_id` than `refs/phc`
@@ -276,6 +283,20 @@ shopify app env pull --path .shopify-cli --env-file .env
    - expected final response from `GET /app`:
       - `Phase 1 works for <shop>`
       - implemented at `src/routes/app.ts:40`
+
+## Vite tunnel host troubleshooting
+
+Symptom during Shopify preview install/open:
+
+- `Blocked request. This host (....trycloudflare.com) is not allowed.`
+
+Cause:
+
+- Vite dev server host allowlist rejects ephemeral Shopify tunnel domains.
+
+Fix in this repo:
+
+- include `server.allowedHosts` for localhost + `.trycloudflare.com` + parsed `HOST/APP_URL/SHOPIFY_APP_URL` in `vite.config.ts`.
 
 ### If you already have a specific second app Client ID
 

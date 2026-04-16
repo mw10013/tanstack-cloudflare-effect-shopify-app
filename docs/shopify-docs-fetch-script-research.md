@@ -1,228 +1,150 @@
 # Shopify docs fetch script research
 
-## Update made
+## Final decisions
 
-- Updated `USER_AGENT` in `scripts/refs-shopify-docs.ts:11` to:
+- fetch format: `.md` only
+- no page-limit flag (`max-pages` removed)
+- rollup to 3 top-level sections:
+  - `graphql`
+  - `app`
+  - `cli`
 
-```ts
-const USER_AGENT =
-  "tanstack-cloudflare-effect-shopify-app/refs-shopify-docs (+https://github.com/mw10013/tanstack-cloudflare-effect-shopify-app)";
-```
+## Clarification: `admin-ext`
 
-Reason: current value (`product-health-check/refs-shopify-docs`) was copied from another repo (`git show 913ccd1 -- scripts/refs-shopify-docs.ts`).
+- `admin-ext` means Admin UI extensions docs (`/docs/api/admin-extensions`)
+- it is not GraphQL Admin API
+- GraphQL Admin API is `/docs/api/admin-graphql/latest`
 
-## What the script does now
+So grouping decision is correct:
 
-From `scripts/refs-shopify-docs.ts`:
+- `admin-extensions` belongs under `app`, not `graphql`
 
-- sections are hardcoded: `type DocSection = "admin-graphql" | "apps-build"` (`scripts/refs-shopify-docs.ts:14`)
-- `admin-graphql` source is sitemap filter:
-  - fetch + gunzip `https://shopify.dev/sitemap_standard.xml.gz` (`scripts/refs-shopify-docs.ts:10`, `scripts/refs-shopify-docs.ts:88`)
-  - keep only URLs under `https://shopify.dev/docs/api/admin-graphql/latest` (`scripts/refs-shopify-docs.ts:8`, `scripts/refs-shopify-docs.ts:109`)
-- `apps-build` source is bounded crawl:
-  - seed `https://shopify.dev/docs/apps/build` (`scripts/refs-shopify-docs.ts:9`, `scripts/refs-shopify-docs.ts:142`)
-  - fetch page markdown, extract links, enqueue only links still under `/docs/apps/build` (`scripts/refs-shopify-docs.ts:155`, `scripts/refs-shopify-docs.ts:164`)
-- save format is `${docUrl}.md` into `refs/shopify-docs/...` (`scripts/refs-shopify-docs.ts:7`, `scripts/refs-shopify-docs.ts:122`)
+## What is implemented
 
-## MD vs TXT decision
+`scripts/refs-shopify-docs.ts` now implements:
 
-Decision: use `.md` only.
+- section type: `"graphql" | "app" | "cli"` (`scripts/refs-shopify-docs.ts:13`)
+- source registry per section (`scripts/refs-shopify-docs.ts:21`)
+- CLI args:
+  - `--section <graphql|app|cli>` repeatable
+  - `--section=<graphql|app|cli>`
+  - `--list-sections`
+  (`scripts/refs-shopify-docs.ts:304`)
+- URL canonicalization now normalizes duplicate slashes (`scripts/refs-shopify-docs.ts:138`)
+- de-duped writes across overlapping prefixes via `savedUrls` set (`scripts/refs-shopify-docs.ts:211`)
+- user agent corrected to this repo identity (`scripts/refs-shopify-docs.ts:10`)
 
-Evidence:
+## Rollup mapping from requested sections
 
-- sampled pages are byte-identical for `.md` and `.txt`:
-  - `https://shopify.dev/docs/api/admin-graphql/latest`
-  - `https://shopify.dev/docs/apps/build`
-- current script already fetches `${docUrl}.md` (`scripts/refs-shopify-docs.ts:122`)
+Requested leaf sections:
 
-Note:
-
-- Shopify `robots.txt` says `.txt` is available for raw text (`https://shopify.dev/robots.txt`), but this plan intentionally standardizes on `.md`.
-
-## How current DocSections were determined
-
-Not from `llms.txt`.
-
-Evidence in code:
-
-- no fetch of `/llms.txt`
-- only discovery sources are sitemap + in-page link crawl
-
-So current sections are manual seeds:
-
-- `admin-graphql`: seeded by `ADMIN_PREFIX` + sitemap filter
-- `apps-build`: seeded by `APPS_BUILD_PREFIX` + recursive crawl
-
-## Naming convention recommendation (short)
-
-Use short CLI keys. Proposed mapping:
-
-- `admin-graphql` -> `admin`
-- `apps-build` -> `apps`
-- `shopify-cli-app` -> `cli-app`
-- `shopify-cli-general` -> `cli-core`
-- `app-home` stays `app-home`
-- `admin-extensions` -> `admin-ext`
-- `checkout-ui-extensions` -> `checkout-ui`
-- `customer-account-ui-extensions` -> `customer-account-ui`
-- `shopify-app-react-router` -> `react-router`
-- `shopify-app-remix` -> `remix`
-
-## All possible sections (so you can pick)
-
-This list is constrained to sections discoverable via current script mechanics (prefix filter + prefix crawl), plus Shopify `llms.txt` curated links.
-
-### A) `/docs/api/*` sections from sitemap (complete current set)
-
-Source: `https://shopify.dev/sitemap_standard.xml.gz` parsed today.
-
-| key (short) | path prefix | urls in sitemap | fit for your goals |
-|---|---|---:|---|
-| `admin` | `/docs/api/admin-graphql` | 3880 | yes, core for admin/product data |
-| `storefront` | `/docs/api/storefront` | 434 | usually no for embedded admin apps |
-| `customer-api` | `/docs/api/customer` | 363 | maybe |
-| `customer-account-ui` | `/docs/api/customer-account-ui-extensions` | 360 | maybe |
-| `liquid` | `/docs/api/liquid` | 328 | maybe (theme app extensions) |
-| `checkout-ui` | `/docs/api/checkout-ui-extensions` | 242 | maybe |
-| `pos-ui` | `/docs/api/pos-ui-extensions` | 172 | maybe |
-| `payments-apps` | `/docs/api/payments-apps` | 163 | maybe |
-| `admin-ext` | `/docs/api/admin-extensions` | 131 | yes |
-| `partner` | `/docs/api/partner` | 91 | maybe |
-| `hydrogen` | `/docs/api/hydrogen` | 89 | no (you said skip hydrogen) |
-| `admin-rest` | `/docs/api/admin-rest` | 76 | maybe (legacy fallback) |
-| `hydrogen-react` | `/docs/api/hydrogen-react` | 44 | no (skip hydrogen) |
-| `remix` | `/docs/api/shopify-app-remix` | 38 | maybe |
-| `react-router` | `/docs/api/shopify-app-react-router` | 23 | yes |
-| `webhooks-api` | `/docs/api/webhooks` | 1 | yes |
-
-### B) Additional sections not represented in sitemap counts
-
-Sources: `https://shopify.dev/llms.txt`, plus prefix crawl.
-
-| key (short) | path prefix | approx pages via prefix crawl | fit for your goals |
-|---|---|---:|---|
-| `apps` | `/docs/apps/build` | 355 | yes, highest value app-build docs |
-| `launch` | `/docs/apps/launch` | 55 | yes (distribution, app review, billing) |
-| `app-home` | `/docs/api/app-home` | 129 | yes (app bridge + polaris web components) |
-| `cli` | `/docs/api/shopify-cli` | 1 | yes (landing) |
-| `cli-app` | `/docs/api/shopify-cli/app` | 31 | yes (app commands) |
-| `cli-core` | `/docs/api/shopify-cli/general-commands` | 12 | yes |
-| `apps-store` | `/docs/apps/store` | 1 | maybe |
-| `apps-deploy` | `/docs/apps/deployment` | 1 | yes |
-| `apps-structure` | `/docs/apps/structure` | 1 | yes |
-| `apps-webhooks` | `/docs/apps/webhooks` | 1 | yes |
-| `storefronts-headless` | `/docs/storefronts/headless` | 62 | no (headless/hydrogen-adjacent) |
-
-### C) Optional granular subsections under `/docs/apps/build/*`
-
-If you want finer-grained section choices than one big `apps` section:
-
-- `admin` (11)
-- `ai-toolkit` (1)
-- `app-configuration` (1)
-- `app-extensions` (5)
-- `app-surfaces` (1)
-- `authentication-authorization` (14)
-- `b2b` (7)
-- `checkout` (54)
-- `cli-for-apps` (8)
-- `compliance` (1)
-- `custom-data` (11)
-- `customer-accounts` (18)
-- `dev-dashboard` (11)
-- `devmcp` (1)
-- `discounts` (9)
-- `flow` (14)
-- `functions` (17)
-- `localize-your-app` (1)
-- `marketing-analytics` (6)
-- `markets` (15)
-- `metafields` (10)
-- `metaobjects` (9)
-- `online-store` (12)
-- `orders-fulfillment` (13)
-- `payments` (15)
-- `performance` (5)
-- `pos` (5)
-- `privacy-law-compliance` (1)
-- `product-merchandising` (19)
-- `purchase-options` (36)
-- `sales-channels` (8)
-- `scaffold-app` (1)
-- `security` (1)
-- `webhooks` (12)
-
-## Section recommendations for your stated scope
-
-You asked for app development/deploy, Polaris, Shopify CLI, dev dashboard/tools, admin/store/product management; exclude hydrogen.
-
-### Recommended include set (phase 1)
-
-- `apps`
-- `launch`
 - `admin`
 - `admin-ext`
-- `app-home`
-- `cli-app`
-- `cli-core`
 - `react-router`
 - `webhooks-api`
+- `app`
+- `launch`
+- `app-home`
+- `cli`
+- `cli-app`
+- `cli-core`
+- `apps-store`
+- `apps-deploy`
+- `apps-structure`
+- `apps-webhooks`
 
-### Optional include set (phase 2, as needed)
+Rolled up to top-level:
 
-- `checkout-ui`
-- `customer-account-ui`
-- `pos-ui`
-- `payments-apps`
-- `admin-rest`
-- `partner`
+- `graphql`
+  - `admin` (`/docs/api/admin-graphql/latest`)
+- `app`
+  - `admin-ext` (`/docs/api/admin-extensions`)
+  - `react-router` (`/docs/api/shopify-app-react-router`)
+  - `webhooks-api` (`/docs/api/webhooks`)
+  - `app` (`/docs/apps/build`)
+  - `launch` (`/docs/apps/launch`)
+  - `app-home` (`/docs/api/app-home`)
+  - `apps-store` (`/docs/apps/store`)
+  - `apps-deploy` (`/docs/apps/deployment`)
+  - `apps-structure` (`/docs/apps/structure`)
+  - `apps-webhooks` (`/docs/apps/webhooks`)
+- `cli`
+  - `cli` (`/docs/api/shopify-cli`)
+  - `cli-app` (`/docs/api/shopify-cli/app`)
+  - `cli-core` (`/docs/api/shopify-cli/general-commands`)
 
-### Recommended exclude now
+## All possible section candidates (current scan)
 
-- `hydrogen`
-- `hydrogen-react`
-- `storefronts-headless`
-- `storefront` (unless you start headless/storefront features)
+These are candidates from sitemap + curated docs links that can be modeled as prefix sections.
 
-## No page-limit flag
+### `/docs/api/*` candidates from sitemap
 
-Page-limit flag is removed from the plan.
+- `/docs/api/admin-graphql`
+- `/docs/api/storefront`
+- `/docs/api/customer`
+- `/docs/api/customer-account-ui-extensions`
+- `/docs/api/liquid`
+- `/docs/api/checkout-ui-extensions`
+- `/docs/api/pos-ui-extensions`
+- `/docs/api/payments-apps`
+- `/docs/api/admin-extensions`
+- `/docs/api/partner`
+- `/docs/api/admin-rest`
+- `/docs/api/shopify-app-remix`
+- `/docs/api/shopify-app-react-router`
+- `/docs/api/webhooks`
+- `/docs/api/hydrogen`
+- `/docs/api/hydrogen-react`
 
-Why loops are already prevented in code:
+### Additional candidates from docs graph / llms links
 
-- crawler tracks `visited` and skips already seen pages (`scripts/refs-shopify-docs.ts:144`, `scripts/refs-shopify-docs.ts:174`)
-- crawler tracks `queued` and avoids duplicate enqueues (`scripts/refs-shopify-docs.ts:143`, `scripts/refs-shopify-docs.ts:163`)
+- `/docs/apps/build`
+- `/docs/apps/launch`
+- `/docs/api/app-home`
+- `/docs/api/shopify-cli`
+- `/docs/api/shopify-cli/app`
+- `/docs/api/shopify-cli/general-commands`
+- `/docs/apps/store`
+- `/docs/apps/deployment`
+- `/docs/apps/structure`
+- `/docs/apps/webhooks`
+- `/docs/storefronts/headless`
 
-So true infinite loops are not expected with current logic.
+## Discovery strategy
 
-Worst-case scenarios are operational, not theoretical recursion:
+- `sitemap-prefix` for prefixes that are well-covered by `sitemap_standard.xml.gz`
+- `crawl-prefix` for prefixes not present (or not complete) in sitemap
 
-- Shopify grows section size a lot (runtime + output size spike)
-- prefix is broadened by mistake (downloads far more docs than intended)
-- canonicalization misses a URL variant, causing cardinality blow-up
-- long run fails late after downloading many files (wasted run time)
+Current implementation split:
 
-Recommendation:
+- `graphql`
+  - sitemap: admin GraphQL latest
+- `app`
+  - sitemap: admin-extensions, shopify-app-react-router, api/webhooks
+  - crawl: apps/build, apps/launch, api/app-home, apps/store, apps/deployment, apps/structure, apps/webhooks
+- `cli`
+  - crawl: shopify-cli root, app commands, general commands
 
-- no page-cap flag
-- rely on strict section-prefix boundaries and reviewed section selection
+## No page-limit flag rationale
 
-## CLI option design recommendation
+No `--max-pages` flag is used.
 
-Recommended CLI:
+This is not about infinite nesting.
 
-- `pnpm refs:shopify-docs --section admin --section apps`
-- `pnpm refs:shopify-docs --list-sections`
-- `pnpm refs:shopify-docs --section app-home`
+The crawler already prevents loops with:
 
-Behavior:
+- `visited` set (`scripts/refs-shopify-docs.ts:260`)
+- `queued` set (`scripts/refs-shopify-docs.ts:259`)
 
-- no `--section`: run default set
-- repeatable `--section`
-- unknown section: fail with valid list
+Operational worst-cases without caps still exist (large growth, prefix mistakes), but policy is to control scope by explicit section/prefix selection, not page caps.
 
-## Notes to carry into implementation
+## Usage
 
-- Use `.md` only for fetches.
-- Consider normalizing duplicate slashes in path canonicalization (some app-home links appeared as `/docs/api/app-home//...`).
-- Keep default section set aligned to your app goals; avoid pulling unrelated docs by default.
+- all defaults (all three top-level sections):
+  - `pnpm refs:shopify-docs`
+- only GraphQL docs:
+  - `pnpm refs:shopify-docs --section graphql`
+- app + cli docs:
+  - `pnpm refs:shopify-docs --section app --section cli`
+- inspect section registry:
+  - `pnpm refs:shopify-docs --list-sections`
