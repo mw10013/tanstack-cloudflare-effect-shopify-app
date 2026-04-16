@@ -128,4 +128,6 @@ This repo keeps D1 session storage as the platform-native replacement.
 ## Active docs split
 
 - Implementation learnings/runbook: `docs/shopify-phase-1-auth-dev-store-research.md`
+- Phase 2 implementation research: `docs/shopify-phase-2-embedded-shell-research.md`
 - Full-arc porting plan (this file): `docs/shopify-porting-arc-research.md`
+- Shopify docs mirror script behavior: `docs/shopify-docs-fetch-script-research.md`

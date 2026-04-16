@@ -110,5 +110,6 @@ Practical sequence:
 ## Docs map (post phase 1)
 
 - `docs/shopify-phase-1-auth-dev-store-research.md`: canonical runbook + phase 1 learnings
+- `docs/shopify-phase-2-embedded-shell-research.md`: phase 2 scope and implementation plan
 - `docs/shopify-porting-arc-research.md`: high-level full arc for template parity porting
 - `docs/shopify-docs-fetch-script-research.md`: Shopify docs mirror script behavior
