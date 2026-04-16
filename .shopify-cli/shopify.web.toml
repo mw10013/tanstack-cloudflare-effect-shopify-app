@@ -1,0 +1,7 @@
+name = "TanStack Start"
+roles = ["frontend", "backend"]
+webhooks_path = "/webhooks/app/uninstalled"
+port = 3200
+
+[commands]
+dev = "pnpm --dir .. dev"

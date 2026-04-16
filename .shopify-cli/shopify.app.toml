@@ -1,0 +1,22 @@
+client_id = "420a2205fff68e94e7ea0fed865950e0"
+name = "tanstack-effect-shopify"
+application_url = "https://example.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+include_config_on_deploy = true
+dev_store_url = "sandbox-shop-01.myshopify.com"
+
+[access_scopes]
+scopes = "write_products,write_metaobjects,write_metaobject_definitions"
+
+[auth]
+redirect_urls = ["https://example.com/auth/callback"]
+
+[webhooks]
+api_version = "2026-07"
+
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled"]
+uri = "/webhooks/app/uninstalled"
