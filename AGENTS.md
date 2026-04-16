@@ -40,6 +40,7 @@ Downloaded source code of libraries are in `refs/` for reference.
 - **Better Auth**: `refs/better-auth/docs/content/docs/` (MDX files - plugins, integrations, adapters, guides, concepts, authentication, reference)
 - **Cloudflare Docs**: `refs/cloudflare-docs/src/content/docs/` (MDX files)
 - **Effect v4 Docs**: `refs/effect4/ai-docs/src/`
+- **Shopify App JS**: `refs/shopify-app-js/` (source for `shopify-api`, `shopify-app-react-router`, and session storage adapters)
 
 ## Commands
 
