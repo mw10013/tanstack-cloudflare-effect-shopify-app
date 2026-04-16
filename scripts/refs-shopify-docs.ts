@@ -4,7 +4,7 @@ import process from "node:process";
 import zlib from "node:zlib";
 
 const ORIGIN = "https://shopify.dev";
-const OUTPUT_ROOT = path.join("refs", "shopify-dev");
+const OUTPUT_ROOT = path.join("refs", "shopify-docs");
 const ADMIN_PREFIX = `${ORIGIN}/docs/api/admin-graphql/latest`;
 const APPS_BUILD_PREFIX = `${ORIGIN}/docs/apps/build`;
 const SITEMAP_URL = `${ORIGIN}/sitemap_standard.xml.gz`;
@@ -12,19 +12,20 @@ const USER_AGENT = "product-health-check/refs-shopify-docs";
 
 type DocSection = "admin-graphql" | "apps-build";
 
-type SavedDoc = {
+interface SavedDoc {
   url: string;
   markdownUrl: string;
   localPath: string;
   section: DocSection;
   fetchedAt: string;
-};
+}
 
 function canonicalizeDocUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  const cleaned = trimmed.replace(/^<|>$/g, "").replace(/[),.;]+$/, "");
+  // oxlint-disable-next-line prefer-string-replace-all
+const cleaned = trimmed.replace(/^<|>$/g, "").replace(/[),.;]+$/, "");
 
   let url: URL;
   try {
@@ -78,7 +79,7 @@ function extractDocLinks(markdown: string): Set<string> {
 async function requestText(url: string): Promise<string> {
   const response = await fetch(url, { headers: { "user-agent": USER_AGENT } });
   if (!response.ok) {
-    throw new Error(`Failed ${url}: ${response.status} ${response.statusText}`);
+    throw new Error(`Failed ${url}: ${String(response.status)} ${response.statusText}`);
   }
   return response.text();
 }
@@ -90,7 +91,7 @@ async function fetchSitemapXml(): Promise<string> {
 
   if (!response.ok) {
     throw new Error(
-      `Failed ${SITEMAP_URL}: ${response.status} ${response.statusText}`,
+      `Failed ${SITEMAP_URL}: ${String(response.status)} ${response.statusText}`,
     );
   }
 
@@ -104,9 +105,9 @@ async function collectAdminUrls(): Promise<Set<string>> {
 
   for (const match of sitemapXml.matchAll(/<loc>([^<]+)<\/loc>/g)) {
     const canonical = canonicalizeDocUrl(match[1] ?? "");
-    if (!canonical) continue;
-    if (!isUnderPrefix(canonical, ADMIN_PREFIX)) continue;
-    urls.add(canonical);
+    if (canonical && isUnderPrefix(canonical, ADMIN_PREFIX)) {
+      urls.add(canonical);
+    }
   }
 
   return urls;
@@ -143,26 +144,36 @@ async function crawlAppsBuild(entries: SavedDoc[]): Promise<number> {
   const visited = new Set<string>();
   let savedCount = 0;
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) continue;
-
-    queued.delete(current);
-    if (visited.has(current)) continue;
-    visited.add(current);
+  async function processPage(pageUrl: string): Promise<void> {
+    visited.add(pageUrl);
 
     try {
-      const content = await saveMarkdown(current, "apps-build", entries);
+      const content = await saveMarkdown(pageUrl, "apps-build", entries);
       savedCount += 1;
 
       for (const link of extractDocLinks(content)) {
-        if (!isUnderPrefix(link, APPS_BUILD_PREFIX)) continue;
-        if (visited.has(link) || queued.has(link)) continue;
-        queue.push(link);
-        queued.add(link);
+        queueNewLink(link);
       }
     } catch (error) {
-      process.stderr.write(`failed apps-build ${current}: ${String(error)}\n`);
+      process.stderr.write(`failed apps-build ${pageUrl}: ${String(error)}\n`);
+    }
+  }
+
+  function queueNewLink(link: string): void {
+    const isNew = isUnderPrefix(link, APPS_BUILD_PREFIX) && !visited.has(link) && !queued.has(link);
+    if (isNew) {
+      queue.push(link);
+      queued.add(link);
+    }
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current) {
+      queued.delete(current);
+      if (!visited.has(current)) {
+        await processPage(current);
+      }
     }
   }
 
@@ -175,8 +186,8 @@ async function main(): Promise<void> {
   const entries: SavedDoc[] = [];
 
   process.stdout.write("collecting admin-graphql urls\n");
-  const adminUrls = [...(await collectAdminUrls())].sort();
-  process.stdout.write(`admin-graphql urls: ${adminUrls.length}\n`);
+  const adminUrls = [...(await collectAdminUrls())].toSorted();
+  process.stdout.write(`admin-graphql urls: ${String(adminUrls.length)}\n`);
 
   let adminSaved = 0;
   for (const url of adminUrls) {
@@ -192,7 +203,7 @@ async function main(): Promise<void> {
   const appsSaved = await crawlAppsBuild(entries);
 
   process.stdout.write(
-    `done saved=${entries.length} admin=${adminSaved} apps-build=${appsSaved}\n`,
+    `done saved=${String(entries.length)} admin=${String(adminSaved)} apps-build=${String(appsSaved)}\n`,
   );
 }
 
