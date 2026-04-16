@@ -1,22 +1,24 @@
-client_id = "420a2205fff68e94e7ea0fed865950e0"
-name = "tanstack-effect-shopify"
-application_url = "https://example.com"
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "9a91c9ff6ba488dafb39a7c696429753"
+name = "tanstack-start"
+application_url = "https://shopify.dev/apps/default-app-home"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
 include_config_on_deploy = true
-dev_store_url = "sandbox-shop-01.myshopify.com"
-
-[access_scopes]
-scopes = "write_products,write_metaobjects,write_metaobject_definitions"
-
-[auth]
-redirect_urls = ["https://example.com/auth/callback"]
 
 [webhooks]
 api_version = "2026-07"
 
-[[webhooks.subscriptions]]
-topics = ["app/uninstalled"]
-uri = "/webhooks/app/uninstalled"
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = ""
+
+[auth]
+redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]

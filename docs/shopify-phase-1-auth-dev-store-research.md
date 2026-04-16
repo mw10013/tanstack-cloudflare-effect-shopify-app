@@ -220,111 +220,71 @@ Reason:
 
 If both projects share one `client_id`, whichever `shopify app dev` runs last overwrites app URL/redirect/webhook config for that app.
 
-### One-by-one checklist (safe path)
+### One-by-one checklist (CLI-first, no manual app creation required)
 
-1. **Create a second Shopify app (dedicated to this repo)**
-   - do not reuse the `phc` app
-   - if this repo uses a different `client_id` than `phc`, both can run side-by-side
-   - Shopify supports multiple configs/apps per codebase:
-     - `refs/shopify-docs/docs/apps/build/cli-for-apps/manage-app-config-files.md:60-63`
-
-### Click-by-click: create the second app in Dev Dashboard
-
-1. Open `https://dev.shopify.com/dashboard/`
-2. In left nav, click **Apps**
-3. Click **Create app** (top-right)
-4. Click **Start from Dev Dashboard**
-5. Enter app name, click **Create**
-
-Source:
-
-- `refs/shopify-docs/docs/apps/build/dev-dashboard/create-apps-using-dev-dashboard.md:44-47`
-
-### Click-by-click: get Client ID + Client secret
-
-1. Open the new app in Dev Dashboard
-2. Click **Settings**
-3. Copy **Client ID** and **Client secret**
-
-Source:
-
-- `refs/shopify-docs/docs/apps/build/dev-dashboard/get-api-access-tokens.md:55-57`
-
-### If you don't have a dev store yet
-
-1. Open `https://dev.shopify.com/dashboard/`
-2. Click **Stores**
-3. Click **Create store**
-4. Enter store name and choose plan
-5. Click **Create store**
-
-Source:
-
-- `refs/shopify-docs/docs/apps/build/dev-dashboard/development-stores.md:27-45`
-
-### Continue in terminal (this repo)
-
-2. **Link `.shopify-cli` config to the new app**
+1. **Link `.shopify-cli` to a dedicated app (recommended)**
    - run:
 
 ```bash
-shopify app config link --path .shopify-cli --client-id <NEW_CLIENT_ID>
+shopify app config link --path .shopify-cli --reset
 ```
 
-   - Shopify CLI docs: this command fetches/creates linked config:
-     - `refs/shopify-docs/docs/apps/build/cli-for-apps/manage-app-config-files.md:62-68`
-   - if CLI says config is already linked or stale, run with reset:
+   - in the interactive prompt, choose to create a new app (or pick an existing dev app)
+   - this avoids dashboard click-through and still creates/links the app
+   - docs: Shopify CLI links and manages apps from terminal:
+      - `refs/shopify-docs/docs/apps/build/cli-for-apps/manage-app-config-files.md:38-44`
+   - docs: app scaffolding flow notes CLI creates the app in Dev Dashboard:
+      - `refs/shopify-docs/docs/apps/build/scaffold-app.md:97-101`
 
-```bash
-shopify app config link --path .shopify-cli --client-id <NEW_CLIENT_ID> --reset
-```
-
-3. **Ensure CLI uses isolated config dir**
-   - run Shopify commands only through scripts using `--path .shopify-cli`:
-     - `package.json:29-31`
-   - this avoids scanning `refs/phc` web config and backend-role conflicts
-   - docs: CLI search paths for web files can be constrained (`web_directories`) and defaults to app root:
-     - `refs/shopify-docs/docs/apps/build/cli-for-apps/app-configuration.md:106`
-     - `refs/shopify-docs/docs/apps/build/cli-for-apps/app-structure.md:89`
-
-4. **Pull env vars directly into `.env` (no manual copy mistakes)**
+2. **Pull env vars into this repo `.env`**
    - run:
 
 ```bash
-shopify app env pull --path .shopify-cli --client-id <NEW_CLIENT_ID> --env-file .env
+shopify app env pull --path .shopify-cli --env-file .env
 ```
 
    - this updates `.env` with `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SCOPES`
-   - command capability docs (`app env pull`):
-     - `shopify app env pull --help`
+   - command capability docs:
+      - `shopify app env pull --help`
 
-5. **Confirm app ID actually changed**
-   - verify `.shopify-cli/shopify.app.toml` has the new `client_id`
-   - verify env with:
+3. **Confirm this repo is not using the `phc` app ID**
+   - verify `.shopify-cli/shopify.app.toml` has a different `client_id` than `refs/phc`
+   - if IDs differ, both projects can run side-by-side safely
+   - docs: multiple app configs/apps per codebase:
+      - `refs/shopify-docs/docs/apps/build/cli-for-apps/manage-app-config-files.md:60-63`
 
-```bash
-shopify app env show --path .shopify-cli --client-id <NEW_CLIENT_ID>
-```
+4. **Verify required auth + store fields**
+   - `.shopify-cli/shopify.app.toml` includes `/auth/callback` in `[auth].redirect_urls`
+   - route handler exists at `src/routes/auth.callback.ts`
+   - set `[build].dev_store_url` in TOML or pass `--store` on `shopify app dev`
 
-6. **Verify auth callback path matches this implementation**
-   - `.shopify-cli/shopify.app.toml:15` should include `/auth/callback`
-   - handler exists at `src/routes/auth.callback.ts`
+5. **If you don't have a dev store yet, create one once**
+   - Dev Dashboard -> Stores -> Create store
+   - source:
+      - `refs/shopify-docs/docs/apps/build/dev-dashboard/development-stores.md:27-45`
 
-7. **Reset/apply D1 migrations**
+6. **Reset/apply D1 migrations**
    - run: `pnpm d1:reset`
    - confirms `ShopifySession` table from `migrations/0001_init.sql`
 
-8. **Start Shopify dev**
+7. **Start Shopify dev and install**
    - run: `pnpm shopify:dev`
-
-9. **Install from preview**
-   - in terminal, press `p`
+   - press `p`
    - click **Install app** in dev store admin
 
-10. **Verify success**
+8. **Verify success**
    - expected final response from `GET /app`:
-     - `Phase 1 works for <shop>`
-     - implemented at `src/routes/app.ts:40`
+      - `Phase 1 works for <shop>`
+      - implemented at `src/routes/app.ts:40`
+
+### If you already have a specific second app Client ID
+
+Use explicit linking instead of the interactive prompt:
+
+```bash
+shopify app config link --path .shopify-cli --client-id <NEW_CLIENT_ID> --reset
+shopify app env pull --path .shopify-cli --client-id <NEW_CLIENT_ID> --env-file .env
+```
 
 ### If you intentionally share one app with `phc` (not recommended)
 
