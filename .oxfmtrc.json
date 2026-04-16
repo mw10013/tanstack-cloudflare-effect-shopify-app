@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 80,
+  "ignorePatterns": [
+    "src/components/ui/*.tsx",
+    "src/routeTree.gen.ts",
+    "worker-configuration.d.ts"
+  ],
+  "sortImports": {
+    "groups": [
+      "type-builtin",
+      "type-external",
+      "type-internal",
+      ["type-parent", "type-sibling", "type-index"],
+      "react-libs",
+      ["value-builtin", "value-external"],
+      "value-internal",
+      ["value-parent", "value-sibling", "value-index"],
+      "unknown"
+    ],
+    "customGroups": [
+      {
+        "groupName": "react-libs",
+        "elementNamePattern": ["react", "react-**"]
+      }
+    ]
+  },
+  "sortTailwindcss": {
+    "stylesheet": "./src/styles.css",
+    "functions": ["tw", "twMerge", "twJoin", "cva", "cn"]
+  },
+  "overrides": [
+    {
+      "files": ["*.jsonc"],
+      "options": {
+        "trailingComma": "none"
+      }
+    }
+  ]
+}

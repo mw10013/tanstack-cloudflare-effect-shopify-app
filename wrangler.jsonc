@@ -1,0 +1,56 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tanstack-cloudflare-effect-shopify-app-local",
+  "compatibility_date": "2026-04-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "1422451be59cc2401532ad67d92ae773",
+  "main": "./src/worker.ts",
+  "vars": {
+    "ENVIRONMENT": "local"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    }
+  },
+  "d1_databases": [
+    {
+      "binding": "D1",
+      "database_name": "shopify-app-d1-local",
+      "database_id": "shopify-app-d1-local"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "353a94f63ff54720a0023ec48a38cb8f"
+    }
+  ],
+  "env": {
+    "production": {
+      "name": "tanstack-cloudflare-effect-shopify-app",
+      "vars": {
+        "ENVIRONMENT": "production"
+      },
+      "d1_databases": [
+        {
+          "binding": "D1",
+          "database_name": "shopify-app-d1-production",
+          "database_id": "797acfa1-083f-40c3-8331-c0b6539567d6"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "KV",
+          "id": "353a94f63ff54720a0023ec48a38cb8f"
+        }
+      ]
+    }
+  }
+}

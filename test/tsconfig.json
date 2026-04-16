@@ -1,0 +1,27 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "./**/*.ts",
+    "./**/*.tsx",
+    "./**/*.d.ts",
+    "../worker-configuration.d.ts",
+    "../src/routeTree.gen.ts"
+  ],
+  "exclude": [],
+  "compilerOptions": {
+    "types": [
+      "vitest",
+      "node",
+      "vite/client",
+      "@cloudflare/vitest-pool-workers",
+      "@cloudflare/vitest-pool-workers/types",
+      "@playwright/test"
+    ],
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "rootDirs": [".."]
+  }
+}
