@@ -74,29 +74,39 @@ So the porting goal is parity with `refs/shopify-app-template`, adapted to TanSt
 
 ### Phase 1 complete (foundation)
 
-- Auth begin endpoint exists: `src/routes/auth.ts:5`
-- Auth callback exists: `src/routes/auth.callback.ts:5`
-- Uninstall webhook validation + cleanup exists: `src/routes/webhooks.app.uninstalled.ts:5`
-- Guarded app route exists: `src/routes/app.ts:19`
-- Shopify API runtime config from env exists: `src/lib/Shopify.ts:45`
-- Vite tunnel host allowlist for Shopify preview exists: `vite.config.ts:31`
+- Auth entry/callback wildcard exists: `src/routes/auth.$.tsx:5` (handles `/auth/*`) and calls `authenticateAdmin` (`src/routes/auth.$.tsx:10`).
+- Login/install begin exists: `src/routes/auth.login.ts:32` + `shopifyLogin` redirect to install URL (`src/lib/Shopify.ts:353`).
+- D1-backed session persistence exists: `storeShopifySession`/`loadShopifySession` (`src/lib/Shopify.ts:92-136`) with schema in `migrations/0001_init.sql:1-9`.
+- Uninstall webhook validation + cleanup exists: `src/routes/webhooks.app.uninstalled.ts:5-23`.
+- Guarded app route exists: `src/routes/app.tsx:39-56`.
+- Shopify API runtime config from env exists: `src/lib/Shopify.ts:46-66`.
+- Vite tunnel host allowlist for Shopify preview exists: `vite.config.ts:33-45`.
+
+### Phase 2 status (done)
+
+- Embedded `AppProvider` shell parity for `/app` is already implemented:
+  - `src/routes/app.tsx:61-67` wraps app routes with `<AppProvider embedded apiKey={apiKey}>`.
+  - `src/components/shopify/AppProvider.tsx:24-37` loads App Bridge + Polaris and handles `shopify:navigate`.
+- Iframe-safe auth transitions exist in auth/session-token flow (`src/lib/Shopify.ts:213-259`).
+- Global Shopify document headers are now applied for HTML responses in worker pipeline:
+  - header applier exported at `src/lib/Shopify.ts:170-178`
+  - applied after `serverEntry.fetch` for HTML responses at `src/worker.ts:113-129`
 
 ### Remaining gaps to parity
 
-- No embedded `AppProvider` shell equivalent yet (template has it in `app.tsx`).
-- No global Shopify document-header injection equivalent yet (template does in `entry.server.tsx`).
-- No `app/scopes_update` webhook handler yet.
-- Runtime currently uses `@shopify/shopify-api` directly; template uses `@shopify/shopify-app-react-router` package abstractions.
+- No `app/scopes_update` webhook subscription/handler yet.
+  - current app config only includes `app/uninstalled` (`.shopify-cli/shopify.app.toml:15-18`)
+- Baseline template app surface parity still pending (`/app/additional` nav/page; `refs/shopify-app-template/app/routes/app.tsx:22`).
 
 ## Port arc (high-level phases)
 
 1. **Phase 1 (done): auth/session foundation**
    - install loop, callback, D1-backed session persistence, uninstall cleanup
 
-2. **Phase 2: embedded shell parity**
-   - add TanStack-native embedded shell behavior analogous to template `AppProvider embedded`
-   - add Shopify document response headers globally for HTML responses
-   - ensure iframe-safe auth transitions remain correct
+2. **Phase 2 (done): embedded shell parity**
+   - done: TanStack-native embedded shell behavior analogous to template `AppProvider embedded` for `/app`
+   - done: Shopify document response headers applied globally for HTML responses in worker
+   - done: iframe-safe auth transitions (`/auth/session-token`, `/auth/exit-iframe`, `shopify-reload`) are implemented
 
 3. **Phase 3: app surface parity**
    - port baseline app pages and nav structure from template route set (`/app`, `/app/additional`, etc.)
@@ -127,7 +137,6 @@ This repo keeps D1 session storage as the platform-native replacement.
 
 ## Active docs split
 
-- Implementation learnings/runbook: `docs/shopify-phase-1-auth-dev-store-research.md`
 - Phase 2 implementation research: `docs/shopify-phase-2-embedded-shell-research.md`
 - Full-arc porting plan (this file): `docs/shopify-porting-arc-research.md`
 - Shopify docs mirror script behavior: `docs/shopify-docs-fetch-script-research.md`

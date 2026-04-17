@@ -7,6 +7,7 @@ import { D1 } from "@/lib/D1";
 import { KV } from "@/lib/KV";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import { Request as AppRequest } from "@/lib/Request";
+import { addDocumentResponseHeaders } from "@/lib/Shopify";
 
 /**
  * Runs an Effect within the full app layer for HTTP request handlers (fetch,
@@ -109,11 +110,21 @@ declare module "@tanstack/react-start" {
 export default {
   async fetch(request, env, _ctx) {
     const runEffect = makeRunEffect(env, request);
-    return serverEntry.fetch(request, {
+    const response = await serverEntry.fetch(request, {
       context: {
         env,
         runEffect,
       },
+    });
+    if (!response.headers.get("content-type")?.startsWith("text/html")) {
+      return response;
+    }
+    const headers = new Headers(response.headers);
+    addDocumentResponseHeaders(request, headers);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
     });
   },
 } satisfies ExportedHandler<Env>;

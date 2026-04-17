@@ -153,18 +153,33 @@ const getSessionTokenFromHeader = (request: Request): string | undefined =>
 const getSessionTokenFromUrlParam = (request: Request): string | null =>
   new URL(request.url).searchParams.get("id_token");
 
+const applyDocumentHeaders = (headers: Headers, shop: string | null) => {
+  if (!shop) {
+    return;
+  }
+  headers.set(
+    "Link",
+    `<${CDN_URL}>; rel="preconnect", <${APP_BRIDGE_URL}>; rel="preload"; as="script", <${POLARIS_URL}>; rel="preload"; as="script"`,
+  );
+  headers.set(
+    "Content-Security-Policy",
+    `frame-ancestors https://${shop} https://admin.shopify.com https://*.spin.dev https://admin.myshopify.io https://admin.shop.dev;`,
+  );
+};
+
+export const addDocumentResponseHeaders = (
+  request: Request,
+  headers: Headers,
+) => {
+  const shopify = getShopifyApi();
+  const shopParam = new URL(request.url).searchParams.get("shop");
+  const shop = shopParam ? shopify.utils.sanitizeShop(shopParam) : null;
+  applyDocumentHeaders(headers, shop);
+};
+
 const buildDocumentResponseHeaders = (shop: string | null) => {
   const headers = new Headers({ "content-type": "text/html;charset=utf-8" });
-  if (shop) {
-    headers.set(
-      "Link",
-      `<${CDN_URL}>; rel="preconnect", <${APP_BRIDGE_URL}>; rel="preload"; as="script", <${POLARIS_URL}>; rel="preload"; as="script"`,
-    );
-    headers.set(
-      "Content-Security-Policy",
-      `frame-ancestors https://${shop} https://admin.shopify.com https://*.spin.dev https://admin.myshopify.io https://admin.shop.dev;`,
-    );
-  }
+  applyDocumentHeaders(headers, shop);
   return headers;
 };
 
