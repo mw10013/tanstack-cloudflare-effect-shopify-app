@@ -2,6 +2,15 @@
 
 Phase 4 focuses on parity for `app/scopes_update` webhook handling and scope/session drift behavior.
 
+## Status
+
+- Done. Phase 4 webhook/scopes parity is implemented.
+- Implemented in:
+  - `.shopify-cli/shopify.app.toml:15-21`
+  - `src/routes/webhooks.app.scopes_update.ts:1-26`
+  - `src/routeTree.gen.ts:19` (generated route registration)
+- Verified with static checks: `pnpm typecheck`, `pnpm lint`.
+
 ## Source of truth
 
 - Template webhook subscription config:
@@ -19,7 +28,7 @@ Phase 4 focuses on parity for `app/scopes_update` webhook handling and scope/ses
 - Add route parity for `/webhooks/app/scopes_update` under `src/routes/`.
 - Reconcile local session persistence when granted scopes change.
 
-## Current repo status
+## Initial repo status
 
 - Current app config includes only `app/uninstalled` subscription:
   - `.shopify-cli/shopify.app.toml:15-18`
@@ -29,7 +38,7 @@ Phase 4 focuses on parity for `app/scopes_update` webhook handling and scope/ses
   - schema: `migrations/0001_init.sql:1-9`
   - write/read: `src/lib/Shopify.ts:92-136`
 
-## Gap analysis
+## Initial gap analysis
 
 - Missing `app/scopes_update` subscription in local TOML.
 - Missing `src/routes/webhooks.app.scopes_update.ts` route handler.
