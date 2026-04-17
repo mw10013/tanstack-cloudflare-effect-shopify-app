@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
 import { AppProvider } from "@/components/AppProvider";
@@ -57,11 +57,12 @@ export const Route = createFileRoute("/app")({
 
 function AppLayout() {
   const { apiKey } = Route.useRouteContext();
+  const { searchStr } = useLocation();
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-link href="/app">Home</s-link>
-        <s-link href="/app/additional">Additional page</s-link>
+        <s-link href={`/app${searchStr}`}>Home</s-link>
+        <s-link href={`/app/additional${searchStr}`}>Additional page</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

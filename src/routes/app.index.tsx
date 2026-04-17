@@ -182,7 +182,7 @@ function AppIndex() {
       <s-button slot="primary-action" onClick={generate} {...(isLoading ? { loading: true } : {})}>
         Generate a product
       </s-button>
-      <s-section heading="Congrats on creating a new Shopify app">
+      <s-section heading="Congrats on creating a new Shopify app 🎉">
         <s-paragraph>
           This embedded app template uses{" "}
           <s-link href="https://shopify.dev/docs/apps/tools/app-bridge" target="_blank">
