@@ -120,10 +120,9 @@ So the porting goal is parity with `refs/shopify-app-template`, adapted to TanSt
 
 ### Remaining gaps to parity
 
-- No `app/scopes_update` webhook subscription/handler yet.
-  - current app config only includes `app/uninstalled` (`.shopify-cli/shopify.app.toml:15-18`)
-- Scope/session drift reconciliation behavior is not implemented yet (phase 4).
-  - only uninstall cleanup webhook exists today: `src/routes/webhooks.app.uninstalled.ts:5-23`
+- None - all template webhook subscriptions are implemented.
+  - `app/uninstalled`: `src/routes/webhooks.app.uninstalled.ts:5-23`
+  - `app/scopes_update`: `src/routes/webhooks.app.scopes_update.ts:5-33`
 
 ## Port arc (high-level phases)
 
@@ -139,9 +138,10 @@ So the porting goal is parity with `refs/shopify-app-template`, adapted to TanSt
    - done: baseline app pages and nav structure parity (`/app`, `/app/additional`)
    - done: server-side Admin API mutation flow wired via TanStack server function
 
-4. **Phase 4 (active): webhook/scopes parity**
-   - add `app/scopes_update` webhook route and reconcile scope/session drift behavior
-   - keep app-specific subscriptions in `.shopify-cli/shopify.app.toml`
+4. **Phase 4 (done): webhook/scopes parity**
+   - done: `app/scopes_update` webhook subscription in `.shopify-cli/shopify.app.toml:20-21`
+   - done: webhook handler at `src/routes/webhooks.app.scopes_update.ts`
+   - done: scope drift reconciliation via `updateShopifySessionScope` (`src/lib/Shopify.ts:207-239`)
 
 5. **Phase 5: production hardening**
    - env/secret management hardening
