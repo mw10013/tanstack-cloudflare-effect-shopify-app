@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "mkdir -p logs && source .env && vite dev --port $PORT --force 2>&1 | tee logs/server.log",
+    "dev": "mkdir -p logs && set -a && source .env && set +a && vite dev --port $PORT --force 2>&1 | tee logs/server.log",
     "build": "vite build",
     "build:PRODUCTION": "CLOUDFLARE_ENV=production pnpm build",
     "serve": "vite preview",

@@ -47,10 +47,16 @@ const getShopifyRuntimeConfig = (): ShopifyRuntimeConfig => {
   if (shopifyRuntimeConfig) {
     return shopifyRuntimeConfig;
   }
+  // Local dev: Shopify CLI provides dynamic HOST/APP_URL per tunnel, and Cloudflare
+  // runtime only sees those parent-process env vars when
+  // CLOUDFLARE_INCLUDE_PROCESS_ENV=true in `.shopify-cli/shopify.web.toml`.
+  // Production: SHOPIFY_APP_URL must come from platform vars/secrets.
   const appUrl = parseAppUrl(
     process.env.SHOPIFY_APP_URL ?? process.env.APP_URL ?? process.env.HOST,
   );
   shopifyRuntimeConfig = {
+    // These come from `.env` in local dev; `.env` values must be exported in
+    // package.json `dev` (`set -a && source .env && set +a`) so child processes see them.
     apiKey: getRequiredEnv("SHOPIFY_API_KEY"),
     apiSecretKey: getRequiredEnv("SHOPIFY_API_SECRET"),
     appUrl,

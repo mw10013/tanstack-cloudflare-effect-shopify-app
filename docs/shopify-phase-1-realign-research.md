@@ -260,15 +260,20 @@ This was the missing piece behind `SHOPIFY_APP_URL or APP_URL or HOST is require
    - Keeps tunnel URL dynamic from Shopify CLI.
    - Source: `refs/cloudflare-docs/src/content/partials/workers/secrets-in-dev.mdx:45-46`.
 
-2. **Keep `.env` flow and normalize at command runtime**
+2. **Keep `.env` flow and rely on existing appUrl fallback chain**
    - Keep static credentials in `.env`.
-   - During local dev, map dynamic `HOST/APP_URL` to `SHOPIFY_APP_URL` in the dev command (no file regeneration):
-     - `SHOPIFY_APP_URL=${SHOPIFY_APP_URL:-${APP_URL:-$HOST}}`
-   - This mirrors template compatibility behavior while preserving dynamic tunnel URLs.
+   - Runtime already accepts first available of `SHOPIFY_APP_URL`, `APP_URL`, `HOST` (`src/lib/Shopify.ts:50-52`).
+   - With `CLOUDFLARE_INCLUDE_PROCESS_ENV=true`, dynamic Shopify CLI `HOST/APP_URL` become visible to local runtime.
 
 3. **Parity hardening: normalize `HOST -> SHOPIFY_APP_URL` like template**
    - Template does this in Vite startup (`refs/shopify-app-template/vite.config.ts:6-16`).
    - Keep as compatibility shim in local dev.
+
+### Local runtime notes from validation
+
+- Startup logs may show both `Using secrets defined in .env` and `Using secrets defined in process.env` after enabling process-env inclusion; expected, not duplicated Shopify config.
+- Shopify proxy can briefly emit `ECONNREFUSED 127.0.0.1:3200` during Vite boot; retries usually recover once Vite is listening.
+- Repeated `[shopify-api/INFO] Future flag ... disabled` lines are informational library output, not auth failures.
 
 ### Production rule (non-negotiable)
 

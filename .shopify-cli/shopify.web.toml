@@ -4,4 +4,17 @@ webhooks_path = "/webhooks/app/uninstalled"
 port = 3200
 
 [commands]
-dev = "pnpm --dir .. dev"
+# Why this command uses `env CLOUDFLARE_INCLUDE_PROCESS_ENV=true`:
+# - Shopify CLI injects dynamic HOST/APP_URL for each `shopify app dev` run (new tunnel each run).
+# - Cloudflare local runtime does not include parent process env unless
+#   CLOUDFLARE_INCLUDE_PROCESS_ENV=true, so app startup can fail with
+#   "SHOPIFY_APP_URL or APP_URL or HOST is required" without this flag.
+# - We intentionally keep SHOPIFY_APP_URL dynamic from Shopify CLI; do not hardcode
+#   tunnel URLs in local config.
+#
+# Related package.json requirement:
+# - `pnpm dev` must export vars from `.env` with
+#   `set -a && source .env && set +a`.
+# - Plain `source .env` loads shell vars but does not export them to child processes,
+#   so Vite/Cloudflare runtime may miss SHOPIFY_API_KEY/SHOPIFY_API_SECRET/PORT.
+dev = "env CLOUDFLARE_INCLUDE_PROCESS_ENV=true pnpm --dir .. dev"

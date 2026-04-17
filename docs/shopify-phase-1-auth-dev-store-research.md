@@ -85,10 +85,16 @@ This mismatch is the root cause of: `SHOPIFY_APP_URL or APP_URL or HOST is requi
 1. Run dev through Shopify CLI (`pnpm shopify:dev`) so tunnel URL exists in parent process env.
 2. Ensure Cloudflare local runtime can consume parent process env:
    - add `CLOUDFLARE_INCLUDE_PROCESS_ENV=true` to the dev command path.
-3. Normalize app URL at command runtime (no file regeneration):
-   - `SHOPIFY_APP_URL=${SHOPIFY_APP_URL:-${APP_URL:-$HOST}}`
+3. Ensure `.env` values are exported in the dev script (`package.json:6`) via `set -a && source .env && set +a`.
 4. Keep credentials in local env (`SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`) as before.
 5. Restart dev session after changing local env loading behavior.
+
+### Observed startup behavior (working, but noisy)
+
+- `Using secrets defined in .env` and `Using secrets defined in process.env` can both appear together; this is expected after enabling `CLOUDFLARE_INCLUDE_PROCESS_ENV=true`.
+- Shopify proxy can briefly log `ECONNREFUSED 127.0.0.1:3200` if it forwards before Vite is listening; this is a startup race, not an auth regression.
+- In successful runs, retries continue and app loads after Vite reports `Local: http://localhost:3200/`.
+- `[shopify-api/INFO] Future flag ... is disabled` lines are informational library logs from `@shopify/shopify-api` initialization, not runtime failures (`src/lib/Shopify.ts:65-73`).
 
 ## Production ownership (important)
 
