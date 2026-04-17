@@ -22,7 +22,7 @@ Phase 1 foundation is complete in current codebase. Phase 2 is now complete in c
 
 - Embedded shell is already implemented for `/app`:
   - `src/routes/app.tsx:61-67`
-  - `src/components/shopify/AppProvider.tsx:31-37`
+  - `src/components/AppProvider.tsx:31-47`
 - Iframe-safe auth transitions are implemented:
   - `/auth/session-token` bounce page and `/auth/exit-iframe` flow in `src/lib/Shopify.ts:213-259`
 - Global document headers are applied for HTML responses:

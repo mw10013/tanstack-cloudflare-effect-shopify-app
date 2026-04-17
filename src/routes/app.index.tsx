@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
@@ -32,23 +33,6 @@ interface GenerateProductResult {
   readonly product: GeneratedProduct;
   readonly variant: readonly GeneratedVariant[];
 }
-
-interface AppBridgeWindow {
-  readonly toast?: {
-    readonly show?: (message: string) => void;
-  };
-  readonly intents?: {
-    readonly invoke?: (
-      action: "edit:shopify/Product",
-      payload: { readonly value: string },
-    ) => void;
-  };
-}
-
-const getAppBridge = (): AppBridgeWindow | undefined =>
-  typeof window === "undefined"
-    ? void 0
-    : (window as Window & { readonly shopify?: AppBridgeWindow }).shopify;
 
 const generateProduct = createServerFn({ method: "POST" })
   .inputValidator((input: { readonly shop: string }) => input)
@@ -155,6 +139,7 @@ export const Route = createFileRoute("/app/")({
 });
 
 function AppIndex() {
+  const shopify = useAppBridge();
   const { shop } = Route.useRouteContext();
   const [isLoading, setIsLoading] = React.useState(false);
   const [result, setResult] = React.useState<GenerateProductResult | null>(null);
@@ -164,8 +149,8 @@ function AppIndex() {
     if (!result?.product.id) {
       return;
     }
-    getAppBridge()?.toast?.show?.("Product created");
-  }, [result?.product.id]);
+    shopify.toast.show("Product created");
+  }, [result?.product.id, shopify]);
 
   const generate = () => {
     setIsLoading(true);
@@ -187,7 +172,7 @@ function AppIndex() {
     if (!productId) {
       return;
     }
-    getAppBridge()?.intents?.invoke?.("edit:shopify/Product", {
+    void shopify.intents.invoke?.("edit:shopify/Product", {
       value: productId,
     });
   };
@@ -233,9 +218,7 @@ function AppIndex() {
             Generate a product
           </s-button>
           {result?.product && (
-            <s-button onClick={editProduct} variant="tertiary">
-              Edit product
-            </s-button>
+            <s-button onClick={editProduct}>Edit product</s-button>
           )}
         </s-stack>
         {error && (

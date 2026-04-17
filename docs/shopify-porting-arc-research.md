@@ -86,7 +86,7 @@ So the porting goal is parity with `refs/shopify-app-template`, adapted to TanSt
 
 - Embedded `AppProvider` shell parity for `/app` is already implemented:
   - `src/routes/app.tsx:61-67` wraps app routes with `<AppProvider embedded apiKey={apiKey}>`.
-  - `src/components/shopify/AppProvider.tsx:24-37` loads App Bridge + Polaris and handles `shopify:navigate`.
+  - `src/components/AppProvider.tsx:24-47` loads App Bridge + Polaris and handles `shopify:navigate`.
 - Iframe-safe auth transitions exist in auth/session-token flow (`src/lib/Shopify.ts:213-259`).
 - Global Shopify document headers are now applied for HTML responses in worker pipeline:
   - header applier exported at `src/lib/Shopify.ts:170-178`

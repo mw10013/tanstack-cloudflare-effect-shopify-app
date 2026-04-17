@@ -1,7 +1,7 @@
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
-import { AppProvider } from "@/components/shopify/AppProvider";
+import { AppProvider } from "@/components/AppProvider";
 import { authenticateAdmin, getShopifyAppConfig } from "@/lib/Shopify";
 
 const authenticateAppRoute = createServerFn({ method: "GET" })
