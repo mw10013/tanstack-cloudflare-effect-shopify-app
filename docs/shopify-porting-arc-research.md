@@ -92,6 +92,17 @@ So the porting goal is parity with `refs/shopify-app-template`, adapted to TanSt
   - header applier exported at `src/lib/Shopify.ts:170-178`
   - applied after `serverEntry.fetch` for HTML responses at `src/worker.ts:113-129`
 
+### Phase 2 curl checks
+
+- Root/app routes are redirect-only in local flow (no HTML headers expected there):
+  - `curl -sS -D - -o /dev/null "http://localhost:$(pnpm port)/?shop=test-shop.myshopify.com"`
+  - `curl -sS -D - -o /dev/null "http://localhost:$(pnpm port)/app?shop=test-shop.myshopify.com&host=dGVzdA==&embedded=1"`
+- Deterministic HTML header check (this endpoint returns HTML directly):
+  - `curl -sS -D - -o /dev/null "http://localhost:$(pnpm port)/auth/session-token?shop=test-shop.myshopify.com&embedded=1&host=dGVzdA==&shopify-reload=http://localhost:$(pnpm port)/app"`
+- Expected headers in that response:
+  - `content-security-policy: frame-ancestors https://test-shop.myshopify.com ...`
+  - `link: <https://cdn.shopify.com> ... app-bridge.js ... polaris.js ...`
+
 ### Remaining gaps to parity
 
 - No `app/scopes_update` webhook subscription/handler yet.
