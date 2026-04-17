@@ -126,11 +126,13 @@ export const loadShopifySession = async ({
   if (!row?.payload) {
     return;
   }
+  let parsed: ReturnType<typeof parseSessionPayload>;
   try {
-    return parseSessionPayload(row.payload);
+    parsed = parseSessionPayload(row.payload);
   } catch {
-    return;
+    parsed = void 0;
   }
+  return parsed;
 };
 
 export const deleteShopifySessionsByShop = async ({
@@ -209,11 +211,13 @@ export const authenticateAdmin = async ({
   const host = hostParam ? shopify.utils.sanitizeHost(hostParam) : null;
 
   if (url.pathname.endsWith("/auth/session-token")) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw renderBouncePage(config.apiKey, shop);
   }
 
   if (url.pathname.endsWith("/auth/exit-iframe")) {
     const destination = url.searchParams.get("exitIframe") ?? config.appUrl;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw renderExitIframePage(config.apiKey, shop, destination);
   }
 
@@ -224,15 +228,18 @@ export const authenticateAdmin = async ({
 
   if (isDocumentRequest) {
     if (!shop) {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw Response.redirect(new URL("/auth/login", request.url).toString());
     }
     if (!host) {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw Response.redirect(new URL("/auth/login", request.url).toString());
     }
     if (url.searchParams.get("embedded") !== "1") {
       const embeddedUrl = await shopify.auth.getEmbeddedAppUrl({
         rawRequest: request,
       });
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw Response.redirect(embeddedUrl);
     }
     if (!searchParamSessionToken) {
@@ -242,6 +249,7 @@ export const authenticateAdmin = async ({
         "shopify-reload",
         `${config.appUrl}${url.pathname}?${searchParams.toString()}`,
       );
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw Response.redirect(
         new URL(
           `/auth/session-token?${searchParams.toString()}`,
@@ -252,6 +260,7 @@ export const authenticateAdmin = async ({
   }
 
   if (!sessionToken) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw new Response("Unauthorized", { status: 401 });
   }
 
@@ -285,11 +294,11 @@ const buildAdminContext = (
 ): AuthenticateAdminResult => ({
   session,
   admin: {
-    graphql: async (query, options) => {
+    graphql: (query, options) => {
       const client = new shopify.clients.Graphql({ session });
       return client.request(query, {
         variables: options?.variables,
-      }) as unknown as Response;
+      }) as unknown as Promise<Response>;
     },
   },
 });
@@ -306,16 +315,14 @@ export const shopifyLogin = async (
     return {};
   }
 
-  const shopInput =
-    shopParam ??
-    ((await request.formData()).get("shop") as string | null) ??
-    "";
+  const formData = shopParam ? null : await request.formData();
+  const shopInput = shopParam ?? (formData?.get("shop") as string | null) ?? "";
 
   const shopWithoutProtocol = shopInput
     .replace(/^https?:\/\//, "")
     .replace(/\/$/, "");
   const shopWithDomain =
-    shopWithoutProtocol.indexOf(".") === -1
+    !shopWithoutProtocol.includes(".")
       ? `${shopWithoutProtocol}.myshopify.com`
       : shopWithoutProtocol;
   const sanitizedShop = shopify.utils.sanitizeShop(shopWithDomain);
@@ -330,5 +337,6 @@ export const shopifyLogin = async (
   }
   const installUrl = `https://${adminPath}/oauth/install?client_id=${config.apiKey}`;
 
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
   throw Response.redirect(installUrl);
 };

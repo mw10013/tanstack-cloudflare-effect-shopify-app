@@ -3,6 +3,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   beforeLoad: ({ location }) => {
     if (location.searchStr.includes("shop=")) {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect({ href: `/app${location.searchStr}` });
     }
   },

@@ -46,6 +46,7 @@ export const Route = createFileRoute("/app")({
     });
 
     if ("redirect" in result) {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect({ href: result.redirect });
     }
 

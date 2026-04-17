@@ -9,11 +9,11 @@ export const Route = createFileRoute("/auth/$")({
         try {
           await authenticateAdmin({ request, env: context.env });
           return new Response(null, { status: 200 });
-        } catch (response) {
-          if (response instanceof Response) {
-            return response;
+        } catch (error) {
+          if (error instanceof Response) {
+            return error;
           }
-          throw response;
+          throw error;
         }
       },
     },
