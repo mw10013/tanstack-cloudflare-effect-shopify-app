@@ -16,6 +16,7 @@ import { Route as AuthLoginRouteImport } from './routes/auth.login'
 import { Route as AuthSplatRouteImport } from './routes/auth.$'
 import { Route as AppAdditionalRouteImport } from './routes/app.additional'
 import { Route as WebhooksAppUninstalledRouteImport } from './routes/webhooks.app.uninstalled'
+import { Route as WebhooksAppScopes_updateRouteImport } from './routes/webhooks.app.scopes_update'
 
 const AppRoute = AppRouteImport.update({
   id: '/app',
@@ -52,6 +53,12 @@ const WebhooksAppUninstalledRoute = WebhooksAppUninstalledRouteImport.update({
   path: '/webhooks/app/uninstalled',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebhooksAppScopes_updateRoute =
+  WebhooksAppScopes_updateRouteImport.update({
+    id: '/webhooks/app/scopes_update',
+    path: '/webhooks/app/scopes_update',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -60,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/auth/$': typeof AuthSplatRoute
   '/auth/login': typeof AuthLoginRoute
   '/app/': typeof AppIndexRoute
+  '/webhooks/app/scopes_update': typeof WebhooksAppScopes_updateRoute
   '/webhooks/app/uninstalled': typeof WebhooksAppUninstalledRoute
 }
 export interface FileRoutesByTo {
@@ -68,6 +76,7 @@ export interface FileRoutesByTo {
   '/auth/$': typeof AuthSplatRoute
   '/auth/login': typeof AuthLoginRoute
   '/app': typeof AppIndexRoute
+  '/webhooks/app/scopes_update': typeof WebhooksAppScopes_updateRoute
   '/webhooks/app/uninstalled': typeof WebhooksAppUninstalledRoute
 }
 export interface FileRoutesById {
@@ -78,6 +87,7 @@ export interface FileRoutesById {
   '/auth/$': typeof AuthSplatRoute
   '/auth/login': typeof AuthLoginRoute
   '/app/': typeof AppIndexRoute
+  '/webhooks/app/scopes_update': typeof WebhooksAppScopes_updateRoute
   '/webhooks/app/uninstalled': typeof WebhooksAppUninstalledRoute
 }
 export interface FileRouteTypes {
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/auth/$'
     | '/auth/login'
     | '/app/'
+    | '/webhooks/app/scopes_update'
     | '/webhooks/app/uninstalled'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/auth/$'
     | '/auth/login'
     | '/app'
+    | '/webhooks/app/scopes_update'
     | '/webhooks/app/uninstalled'
   id:
     | '__root__'
@@ -106,6 +118,7 @@ export interface FileRouteTypes {
     | '/auth/$'
     | '/auth/login'
     | '/app/'
+    | '/webhooks/app/scopes_update'
     | '/webhooks/app/uninstalled'
   fileRoutesById: FileRoutesById
 }
@@ -114,6 +127,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AuthSplatRoute: typeof AuthSplatRoute
   AuthLoginRoute: typeof AuthLoginRoute
+  WebhooksAppScopes_updateRoute: typeof WebhooksAppScopes_updateRoute
   WebhooksAppUninstalledRoute: typeof WebhooksAppUninstalledRoute
 }
 
@@ -168,6 +182,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebhooksAppUninstalledRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/webhooks/app/scopes_update': {
+      id: '/webhooks/app/scopes_update'
+      path: '/webhooks/app/scopes_update'
+      fullPath: '/webhooks/app/scopes_update'
+      preLoaderRoute: typeof WebhooksAppScopes_updateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -188,6 +209,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AuthSplatRoute: AuthSplatRoute,
   AuthLoginRoute: AuthLoginRoute,
+  WebhooksAppScopes_updateRoute: WebhooksAppScopes_updateRoute,
   WebhooksAppUninstalledRoute: WebhooksAppUninstalledRoute,
 }
 export const routeTree = rootRouteImport
