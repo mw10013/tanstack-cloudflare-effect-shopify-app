@@ -3,7 +3,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
-import { getShopifyApi, loadShopifySession } from "@/lib/Shopify";
+import { authenticateAdmin } from "@/lib/Shopify";
 
 interface GeneratedVariant {
   readonly id: string;
@@ -34,25 +34,15 @@ interface GenerateProductResult {
   readonly variant: readonly GeneratedVariant[];
 }
 
-const generateProduct = createServerFn({ method: "POST" })
-  .inputValidator((input: { readonly shop: string }) => input)
-  .handler(async ({ data, context }): Promise<GenerateProductResult> => {
-    const shopify = getShopifyApi();
-    const shop = shopify.utils.sanitizeShop(data.shop, true);
-    if (!shop) {
-      throw new Error("Invalid shop");
-    }
-
-    const sessionId = shopify.session.getOfflineId(shop);
-    const session = await loadShopifySession({ env: context.env, id: sessionId });
-    if (!session) {
-      throw new Error("App session is missing. Reinstall app to continue.");
-    }
-
-    const admin = new shopify.clients.Graphql({ session });
+const generateProduct = createServerFn({ method: "POST" }).handler(
+  async ({ context }): Promise<GenerateProductResult> => {
+    const { admin } = await authenticateAdmin({
+      request: context.request,
+      env: context.env,
+    });
     const color = ["Red", "Orange", "Yellow", "Green"][Math.floor(Math.random() * 4)];
 
-    const productCreateResponse = (await admin.request(
+    const productCreateResponse = await admin.graphql(
       `#graphql
       mutation populateProduct($product: ProductCreateInput!) {
         productCreate(product: $product) {
@@ -81,7 +71,7 @@ const generateProduct = createServerFn({ method: "POST" })
           },
         },
       },
-    )) as unknown as Response;
+    );
 
     const productCreateJson: ShopifyGraphqlResponse<{
       readonly productCreate?: {
@@ -98,7 +88,7 @@ const generateProduct = createServerFn({ method: "POST" })
       throw new Error("Created product has no variant");
     }
 
-    const productVariantsBulkUpdateResponse = (await admin.request(
+    const productVariantsBulkUpdateResponse = await admin.graphql(
       `#graphql
       mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
         productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -116,7 +106,7 @@ const generateProduct = createServerFn({ method: "POST" })
           variants: [{ id: variantId, price: "100.00" }],
         },
       },
-    )) as unknown as Response;
+    );
 
     const productVariantsBulkUpdateJson: ShopifyGraphqlResponse<{
       readonly productVariantsBulkUpdate?: {
@@ -132,7 +122,8 @@ const generateProduct = createServerFn({ method: "POST" })
     }
 
     return { product, variant };
-  });
+  },
+);
 
 export const Route = createFileRoute("/app/")({
   component: AppIndex,
@@ -140,7 +131,6 @@ export const Route = createFileRoute("/app/")({
 
 function AppIndex() {
   const shopify = useAppBridge();
-  const { shop } = Route.useRouteContext();
   const [isLoading, setIsLoading] = React.useState(false);
   const [result, setResult] = React.useState<GenerateProductResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -155,7 +145,7 @@ function AppIndex() {
   const generate = () => {
     setIsLoading(true);
     setError(null);
-    void generateProduct({ data: { shop } })
+    void generateProduct()
       .then((next) => {
         setResult(next);
       })

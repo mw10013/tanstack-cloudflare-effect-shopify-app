@@ -303,17 +303,25 @@ export const authenticateAdmin = async ({
   return buildAdminContext(newSession, shopify);
 };
 
+/**
+ * Wraps `@shopify/shopify-api`'s `GraphqlClient.request` (returns a parsed
+ * `RequestReturn` object) in a `Response` so callers use `.json()`, matching
+ * the template's `admin.graphql` shape.
+ *
+ * Ref: refs/shopify-app-js/packages/apps/shopify-app-react-router/src/server/clients/admin/graphql.ts:22-31
+ */
 const buildAdminContext = (
   session: ShopifyApi.Session,
   shopify: ReturnType<typeof getShopifyApi>,
 ): AuthenticateAdminResult => ({
   session,
   admin: {
-    graphql: (query, options) => {
+    graphql: async (query, options) => {
       const client = new shopify.clients.Graphql({ session });
-      return client.request(query, {
+      const apiResponse = await client.request(query, {
         variables: options?.variables,
-      }) as unknown as Promise<Response>;
+      });
+      return Response.json(apiResponse);
     },
   },
 });

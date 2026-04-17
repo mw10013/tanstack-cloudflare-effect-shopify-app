@@ -1,176 +1,93 @@
-# Shopify GraphQL parity research
+# Shopify GraphQL parity with `refs/shopify-app-template`
 
-Question: how `refs/shopify-app-template` sets up/uses GraphQL, whether this repo matches, and whether codegen is used in each.
+How this port matches template, where it deviates for TanStack Start + Cloudflare, and what's left.
 
-## Sources scanned
+## Parity with template
 
-- Template runtime + GraphQL usage:
-  - `refs/shopify-app-template/app/shopify.server.ts`
-  - `refs/shopify-app-template/app/routes/app.tsx`
-  - `refs/shopify-app-template/app/routes/auth.$.tsx`
-  - `refs/shopify-app-template/app/routes/app._index.tsx`
-- Template codegen config:
-  - `refs/shopify-app-template/.graphqlrc.ts`
-  - `refs/shopify-app-template/package.json`
-- Shopify docs + package docs:
-  - `refs/shopify-docs/docs/api/shopify-app-react-router/v1/apis/admin-api.md`
-  - `refs/shopify-docs/docs/api/shopify-app-react-router/v1/guide-graphql-types.md`
-  - `refs/shopify-app-js/packages/apps/shopify-api/docs/guides/graphql-types.md`
-  - `refs/shopify-app-js/packages/api-clients/api-codegen-preset/README.md`
-  - `refs/shopify-app-js/packages/apps/shopify-app-react-router/src/server/clients/admin/types.ts`
-- This port:
-  - `src/lib/Shopify.ts`
-  - `src/routes/app.tsx`
-  - `src/routes/auth.$.tsx`
-  - `src/routes/app.index.tsx`
-  - `package.json`
-- `refs/shopify-codegen/` (now populated with `@shopify/api-codegen-preset` 1.2.2 source) — see `refs/shopify-codegen/packages/api-clients/api-codegen-preset/`.
+### Route usage
 
-## How the template sets up and uses GraphQL
+Template: `loader`/`action` calls `authenticate.admin(request)` and uses the returned `admin.graphql(...)` (`refs/shopify-app-template/app/routes/app._index.tsx:18-23,58`).
 
-1) Auth + admin context is provided by `shopifyApp`
+This port: `generateProduct` server fn (`src/routes/app.index.tsx`) calls `authenticateAdmin({ request: context.request, env: context.env })` and uses the returned `admin.graphql(...)`. Same operations (`productCreate`, `productVariantsBulkUpdate`), same `#graphql` inline tags, same `response.json()` pattern.
 
-- `refs/shopify-app-template/app/shopify.server.ts:10-34` initializes `shopifyApp(...)` and exports `authenticate`.
-- Route loaders/actions then call `authenticate.admin(request)`.
-  - `refs/shopify-app-template/app/routes/app.tsx:8-13`
-  - `refs/shopify-app-template/app/routes/auth.$.tsx:6-10`
+### `admin.graphql` return shape
 
-2) GraphQL calls are through `admin.graphql`
+Template wraps `@shopify/shopify-api`'s `GraphqlClient.request` (returns a parsed `RequestReturn` object) in `new Response(JSON.stringify(apiResponse))` so callers can `.json()` (`refs/shopify-app-js/packages/apps/shopify-app-react-router/src/server/clients/admin/graphql.ts:22-31`).
 
-- `refs/shopify-app-template/app/routes/app._index.tsx:18-85` calls `admin.graphql(...)` for:
-  - `productCreate`
-  - `productVariantsBulkUpdate`
-- Queries are inline template strings tagged with `#graphql` (`refs/shopify-app-template/app/routes/app._index.tsx:24`, `refs/shopify-app-template/app/routes/app._index.tsx:59`).
+This port: `buildAdminContext` in `src/lib/Shopify.ts` does the same with `Response.json(apiResponse)`.
 
-3) This matches Shopify guidance for app-router apps
+### Auth behavior
 
-- Docs example shows same shape: `const { admin } = await authenticate.admin(request); const response = await admin.graphql(...)` in `refs/shopify-docs/docs/api/shopify-app-react-router/v1/apis/admin-api.md:175-206`.
+Template `authenticate.admin(request)` provides: session-token validation, offline token exchange, embedded-URL redirect, exit-iframe bounce. This port's `authenticateAdmin` (`src/lib/Shopify.ts:213-304`) implements all of the above against D1 + Web API, and `src/routes/auth.$.tsx:8-18` wires the `/auth/$` handler analogous to template's `auth.$` loader.
 
-## Does template use codegen?
+### Codegen scaffolding
 
-Yes, template is scaffolded for codegen.
+Template: `.graphqlrc.ts` + `@shopify/api-codegen-preset` + `graphql-config` dev deps + `graphql-codegen` script. Generated files live under `./app/types` and are not committed (`refs/shopify-app-template/.graphqlrc.ts:9-14`, `refs/shopify-app-template/package.json:18,43,57`).
 
-- `refs/shopify-app-template/package.json:18` has script: `"graphql-codegen": "graphql-codegen"`.
-- `refs/shopify-app-template/package.json:43` has dev dependency `@shopify/api-codegen-preset`.
-- `refs/shopify-app-template/package.json:57` has `graphql-config`.
-- `refs/shopify-app-template/.graphqlrc.ts:9-14` configures `shopifyApiProject({ apiType: ApiType.Admin, ... outputDir: "./app/types" })`.
+This port: same shape. Generated files live under `./src/types` (the analogue of template's `./app/types` — template's source root is `app/`, ours is `src/`). Not committed. See "Codegen: configured but not yet in use" below for the actual status.
 
-Important nuance: template is configured for codegen, but generated files are not committed in this snapshot (`refs/shopify-app-template/app/types/` absent).
+## Deviations to accommodate TanStack Start + Cloudflare
 
-## How this project sets up and uses GraphQL
+- **No `@shopify/shopify-app-react-router` dep.** The port uses `@shopify/shopify-api` directly and re-implements the `authenticate.admin` / `addDocumentResponseHeaders` / `login` surface in `src/lib/Shopify.ts`. Template's package ships only a `node` adapter (`refs/shopify-app-js/packages/apps/shopify-app-react-router/src/server/adapters/node/index.ts`); the port runs on Workers via `@shopify/shopify-api/adapters/web-api` (`src/lib/Shopify.ts:1`).
+- **Session storage is D1, not Prisma.** Template uses `PrismaSessionStorage` (`refs/shopify-app-template/app/shopify.server.ts:17`); this port persists sessions directly in D1 via `storeShopifySession` / `loadShopifySession` / `deleteShopifySessionsByShop` (`src/lib/Shopify.ts:92-148`).
+- **Route wiring is TanStack, not React Router.** Template guards `/app` with a `loader` calling `authenticate.admin(request)`; this port guards `/app` in `beforeLoad` via a `createServerFn` that calls `authenticateAdmin` and propagates `Response` redirects (`src/routes/app.tsx:39-54`).
+- **Server fn inputs vs loader args.** Template actions receive `{ request }` from React Router; this port reads `context.request` from the TanStack server-fn context (`src/worker.ts:99-103` declares `ServerContext` with `env`, `request`, `runEffect`).
+- **`apiVersion: January26`** (`src/lib/Shopify.ts:77` and `.graphqlrc.ts`) vs template's `October25` — newer stable Shopify API version.
+- **`@shopify/polaris-types` activation + `s-app-nav` augmentation.** Both live at the top of `src/routes/app.tsx` — the embedded-app subtree where Polaris and App Bridge elements render. `tsconfig.json` lists `@shopify/polaris-types` in `compilerOptions.types` identically to template (`refs/shopify-app-template/tsconfig.json:19`). React 18 (template) exposes JSX globally, so tsconfig `types` alone activates the augmentation. Our `@types/react` 19 scopes JSX inside the `react` module, so only the package's `declare module 'react'` blocks apply — and module augmentation only fires when the containing module is imported from a runtime file (a `.d.ts` alone is not enough). Type-only side-effect import `import type {} from "@shopify/polaris-types";` activates it without runtime resolution (package ships only a `types` export condition — a value import breaks Vite dep-scan; `import type` is erased). Empty specifier `{}` trips oxlint's `unicorn/require-module-specifiers`, disabled inline since there's no value to name. `s-app-nav` is an App Bridge element not covered by `@shopify/polaris-types`; template uses it untyped and accepts the error (`refs/shopify-app-template/app/routes/app.tsx:20-23`), this port augments it locally in the same file. Residual gap: `s-app-nav` is an App Bridge element not covered by `@shopify/polaris-types`; template has the same untyped usage at `refs/shopify-app-template/app/routes/app.tsx:20-23`.
 
-1) Auth/admin context is implemented manually (Cloudflare + TanStack Start)
+## Codegen: configured but not yet in use
 
-- `src/lib/Shopify.ts:68-80` builds `shopifyApi(...)` from `@shopify/shopify-api`.
-- `src/lib/Shopify.ts:213-304` implements `authenticateAdmin` (session token decode, offline token exchange, D1 session load/store).
-- `src/lib/Shopify.ts:312-317` returns an `admin.graphql`-style function backed by `new shopify.clients.Graphql({ session })`.
+Codegen is wired but nothing in the repo actually consumes generated types yet. `src/routes/app.index.tsx:8-35` still defines handwritten `GeneratedVariant` / `GeneratedProduct` / `ShopifyGraphqlResponse` interfaces for the mutation responses.
 
-2) Route guard integration is TanStack-native, not React Router loader pattern
+To start using codegen (matches template's intended workflow per `refs/shopify-app-js/packages/api-clients/api-codegen-preset/README.md:287-365`):
 
-- `src/routes/app.tsx:39-54` guards `/app` in `beforeLoad` via `createServerFn`.
-- `src/routes/auth.$.tsx:8-18` wires `/auth/$` GET handler to `authenticateAdmin`, analogous to template `auth.$` loader.
+1. **Run codegen once** (needs network — the preset fetches the Admin schema):
+   ```sh
+   pnpm graphql-codegen
+   ```
+   This writes `src/types/admin.schema.json`, `src/types/admin.types.d.ts`, `src/types/admin.generated.d.ts` (three files produced by `shopifyApiProject`, mirroring template's `./app/types/` output).
 
-3) GraphQL mutation demo exists and is near-parity
+2. **Register the generated module augmentation** so `@shopify/shopify-api` client types are overloaded with per-operation variable + return types. Add once to a module in the server graph (e.g. top of `src/lib/Shopify.ts`):
+   ```ts
+   import "@/types/admin.generated.d.ts";
+   ```
+   Template does this via the preset's `module` option which defaults to the shopify client package; ambient import is sufficient (`refs/shopify-app-js/packages/api-clients/api-codegen-preset/README.md:341`).
 
-- `src/routes/app.index.tsx:71-150` runs the same two mutations (`productCreate`, `productVariantsBulkUpdate`) and parses JSON.
-- It also uses `#graphql` tags (`src/routes/app.index.tsx:72`, `src/routes/app.index.tsx:118`).
+3. **Replace handwritten interfaces** in `src/routes/app.index.tsx:8-35`. Generated types come from the `populateProduct` and `shopifyReactRouterTemplateUpdateVariant` operation names:
+   ```ts
+   import type { PopulateProductMutation, ShopifyReactRouterTemplateUpdateVariantMutation } from "@/types/admin.generated";
+   ```
+   Then type `response.json()` results with those.
 
-## Is GraphQL set up/used in the same way?
+4. **Rerun codegen whenever operations change.** Dev flow uses `--watch`:
+   ```sh
+   pnpm graphql-codegen -- --watch
+   ```
 
-Short answer: mostly same runtime behavior, different implementation details, and not same codegen setup.
+5. **(Optional)** Commit the generated files — template does not, so keeping `src/types/` in `.gitignore` matches template exactly.
 
-- Same:
-  - Embedded-app auth gate before app pages.
-  - Offline session-based Admin API access.
-  - `#graphql` inline operations.
-  - Product demo mutations on app index.
-- Different:
-  - Template uses `@shopify/shopify-app-react-router` (`authenticate.admin` + `admin.graphql`) directly.
-  - This port re-implements that flow in `src/lib/Shopify.ts` for TanStack Start + Cloudflare.
-  - This port's `app.index` currently instantiates `shopify.clients.Graphql` directly (`src/routes/app.index.tsx:52`) instead of reusing the returned `admin.graphql` wrapper. It also re-loads the offline session by shop instead of going through `authenticateAdmin`.
+Output-location parity check: template writes to `./app/types` because its source root is `./app`; this port writes to `./src/types` because its source root is `./src`. Same relative placement, different top-level dir due to framework conventions.
 
-Given project goal (port template to TanStack Start + Cloudflare), this is conceptually aligned on runtime outcomes, but not identical at framework helper/tooling level.
+## What remains for full parity
 
-## Why this project does not use codegen
+### Adopt `@shopify/shopify-app-react-router/server`
 
-Evidence in this repo:
-
-- No `.graphqlrc.ts` in root.
-- No `graphql-codegen` script in `package.json`.
-- No `@shopify/api-codegen-preset` or `graphql-config` deps in `package.json`.
-- No generated files like `admin.generated.d.ts`.
-- GraphQL response shapes are handwritten interfaces in `src/routes/app.index.tsx:7-34`.
-
-What Shopify docs/packages indicate:
-
-- Codegen is an opt-in enhancement, not required for runtime.
-  - `refs/shopify-docs/docs/api/shopify-app-react-router/v1/guide-graphql-types.md:17-20` says you can use codegen by installing packages and running `graphql-codegen`.
-- For typed operations with `@shopify/shopify-api`, direct deps are expected.
-  - `refs/shopify-app-js/packages/apps/shopify-api/docs/guides/graphql-types.md:33-35` says clients should be direct dependencies so codegen can overload types.
-- Preset package explicitly exists for this purpose.
-  - `refs/shopify-app-js/packages/api-clients/api-codegen-preset/README.md:8-12`.
-
-Inference: this port prioritized auth/runtime parity and omitted optional dev-time GraphQL typegen wiring.
-
-## Review: is the research sound?
-
-Mostly yes. Corrections folded in above:
-
-- `src/routes/app.index.tsx:68` → actual call site is `src/routes/app.index.tsx:52`.
-- `refs/shopify-codegen/` is now populated (not empty).
-- Previously missing nuance: the port's `app.index` also bypasses `authenticateAdmin` and re-derives the session from `shop` (`src/routes/app.index.tsx:37-52`), so it skips session-token validation + token-exchange-on-expiry that `authenticateAdmin` (`src/lib/Shopify.ts:213-304`) provides.
-
-Otherwise all line-range citations, package.json evidence, and "same vs different" claims check out against current tree.
-
-## What must we do to align this codebase with `refs/shopify-app-template`?
-
-Goal: match template's GraphQL setup/usage as closely as Cloudflare Workers + TanStack Start allow. Remaining gaps + concrete steps:
-
-### 1) Stop bypassing `authenticateAdmin` in routes
-
-Template never constructs a GraphQL client by hand; every route goes through `authenticate.admin(request)` and uses the returned `admin.graphql` (`refs/shopify-app-template/app/routes/app._index.tsx:18-23,58`).
-
-- Refactor `src/routes/app.index.tsx` `generateProduct` server fn to call `authenticateAdmin({ request, env })` and use `admin.graphql(...)` instead of `new shopify.clients.Graphql({ session })` (`src/routes/app.index.tsx:40-52`).
-- Remove the `shop` input / `loadShopifySession` path from the server fn — template actions take only the request. This recovers session-token validation and offline-token refresh on expiry (`src/lib/Shopify.ts:282-303`).
-
-### 2) Adopt `@shopify/shopify-app-react-router/server` where it's portable
-
-Template delegates auth, boundary helpers, `addDocumentResponseHeaders`, and `admin.graphql` to `shopifyApp()` (`refs/shopify-app-template/app/shopify.server.ts:10-34`). This port re-implements the same surface in `src/lib/Shopify.ts`.
+This would remove the hand-rolled `authenticateAdmin` / `addDocumentResponseHeaders` / `shopifyLogin` in `src/lib/Shopify.ts` in favor of `shopifyApp({ ... }).authenticate.admin(request)` etc., matching `refs/shopify-app-template/app/shopify.server.ts:10-34`.
 
 Portability check:
-- `@shopify/shopify-app-react-router/server` operates on standard `Request`/`Response` and delegates runtime abstraction to `@shopify/shopify-api` (which already works via `adapters/web-api` in this repo — `src/lib/Shopify.ts:1`).
-- Only adapter shipped is `adapters/node` (`refs/shopify-app-js/packages/apps/shopify-app-react-router/src/server/adapters/node/index.ts`). It just calls `setAbstractRuntimeString(...)` and reads `APP_BRIDGE_URL`. Safe to skip on Workers; import `/server` directly after importing `@shopify/shopify-api/adapters/web-api`.
-- `SessionStorage` interface is minimal (`refs/shopify-app-js/packages/apps/session-storage/shopify-app-session-storage/src/types.ts:6-41`) — `storeSession`, `loadSession`, `deleteSession`, `deleteSessions`, `findSessionsByShop`. Implement on top of existing D1 helpers in `src/lib/Shopify.ts:92-148`.
+- The package's only shipped adapter is `node` (`refs/shopify-app-js/packages/apps/shopify-app-react-router/src/server/adapters/node/index.ts`). It's thin — just `setAbstractRuntimeString(...)` + optional `APP_BRIDGE_URL`. Safe to skip on Workers; import `/server` directly after importing `@shopify/shopify-api/adapters/web-api`.
+- Runtime abstraction is delegated to `@shopify/shopify-api`, which already works on Workers in this repo.
+- `SessionStorage` interface is minimal (`refs/shopify-app-js/packages/apps/session-storage/shopify-app-session-storage/src/types.ts:6-41`): `storeSession`, `loadSession`, `deleteSession`, `deleteSessions`, `findSessionsByShop`. Implement on top of existing D1 helpers (`src/lib/Shopify.ts:92-148`).
 
 Steps:
-- Add dep `@shopify/shopify-app-react-router` (pin to latest 1.x; template uses `^1.1.0`).
-- Create `D1SessionStorage` implementing `SessionStorage`, wrapping current D1 logic.
-- Add a `getShopify(env)` builder around `shopifyApp({ apiKey, apiSecretKey, apiVersion, scopes, appUrl, sessionStorage: new D1SessionStorage(env), distribution: AppStore, future: { expiringOfflineAccessTokens: true } })` mirroring `refs/shopify-app-template/app/shopify.server.ts:10-25`.
-- Replace `authenticateAdmin` callers with `shopify.authenticate.admin(request)`; replace `addDocumentResponseHeaders` with `shopify.addDocumentResponseHeaders`; replace `shopifyLogin` with `shopify.login` (`refs/shopify-app-template/app/shopify.server.ts:30-32`).
-- Keep TanStack wiring (`beforeLoad` in `src/routes/app.tsx:39-54`, `auth.$` GET handler in `src/routes/auth.$.tsx:8-18`) but have them call the library-provided functions.
+1. Add dep `@shopify/shopify-app-react-router` (template uses `^1.1.0`).
+2. Implement `D1SessionStorage` class against the `SessionStorage` interface, wrapping the current D1 helpers.
+3. Add a `getShopify(env)` builder around `shopifyApp({ apiKey, apiSecretKey, apiVersion, scopes, appUrl, sessionStorage: new D1SessionStorage(env), distribution: AppStore, future: { expiringOfflineAccessTokens: true } })` mirroring `refs/shopify-app-template/app/shopify.server.ts:10-25`.
+4. Replace `authenticateAdmin` / `addDocumentResponseHeaders` / `shopifyLogin` call sites with `shopify.authenticate.admin(request)` / `shopify.addDocumentResponseHeaders` / `shopify.login` (`refs/shopify-app-template/app/shopify.server.ts:30-32`).
+5. Keep TanStack wiring (`beforeLoad` in `src/routes/app.tsx:39-54`, `/auth/$` GET handler in `src/routes/auth.$.tsx:8-18`) but route through library-provided functions.
 
-If the react-router package turns out to pull unshakeable Node-only code in practice (e.g. `crypto`, streams), fall back to keeping the hand-rolled `authenticateAdmin` but still expose it with the template's `authenticate.admin(request)` signature so downstream route code is identical.
+Fallback: if the package pulls Node-only code that can't be tree-shaken on Workers, keep hand-rolled `authenticateAdmin` but expose it behind the exact template signature `authenticate.admin(request)` so downstream route code stays identical.
 
-### 3) Add codegen scaffolding (dev-time parity)
+### Switch route code to generated types
 
-Template ships codegen but doesn't commit outputs (`refs/shopify-app-template/package.json:18,43,57`, `refs/shopify-app-template/.graphqlrc.ts:9-14`). Match that:
-
-- Add dev deps: `@shopify/api-codegen-preset`, `graphql-config` (script uses `graphql-codegen` CLI provided by the preset).
-- Add `package.json` script: `"graphql-codegen": "graphql-codegen"`.
-- Add `.graphqlrc.ts` at repo root modeled on `refs/shopify-app-template/.graphqlrc.ts` but targeting TanStack dirs:
-  - `apiType: ApiType.Admin`
-  - `apiVersion: ApiVersion.January26` (match `src/lib/Shopify.ts:77`)
-  - `documents: ["./src/**/*.{ts,tsx}"]`
-  - `outputDir: "./src/types"` (add to `.gitignore` if matching template's "configured but not committed" choice)
-- Delete handwritten response interfaces in `src/routes/app.index.tsx:8-35` and switch to generated types once codegen runs. Per `refs/shopify-app-js/packages/apps/shopify-api/docs/guides/graphql-types.md:33-35`, keep `@shopify/shopify-api` as a direct dep so client types are overloaded.
-
-### 4) Docs/meta nits
-
-- After step 2, update `docs/shopify-graphql-parity-research.md` "Different" section — custom auth plumbing disappears.
-- If staying on `@shopify/shopify-api` directly (skip step 2), still do steps 1 and 3 — they're independent.
-
-## Bottom line
-
-- Template uses GraphQL via `authenticate.admin` + `admin.graphql`, and ships codegen scaffolding.
-- This project uses GraphQL in a functionally similar way for runtime behavior, but with custom Cloudflare/TanStack auth plumbing and no codegen.
-- Full alignment = (1) route uses `authenticate.admin` + `admin.graphql`, (2) adopt `shopify-app-react-router/server` + D1 `SessionStorage`, (3) add `.graphqlrc.ts` + codegen deps/script.
+Once step 1 of "Codegen" above runs, delete the handwritten interfaces in `src/routes/app.index.tsx:8-35` and use the generated `PopulateProductMutation` / `ShopifyReactRouterTemplateUpdateVariantMutation` types.

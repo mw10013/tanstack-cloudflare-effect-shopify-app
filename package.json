@@ -29,6 +29,7 @@
     "shopify:dev": "shopify app dev --path .shopify-cli",
     "shopify:config:link": "shopify app config link --path .shopify-cli",
     "shopify:env:show": "shopify app env show --path .shopify-cli",
+    "graphql-codegen": "graphql-codegen",
     "tail:PRODUCTION": "wrangler tail tanstack-cloudflare-effect-shopify-app",
     "d1:migrate:list": "wrangler d1 migrations list shopify-app-d1-local --local",
     "d1:migrate:apply": "wrangler d1 migrations apply shopify-app-d1-local --local",
@@ -82,6 +83,8 @@
     "@cloudflare/vitest-pool-workers": "0.14.3",
     "@effect/vitest": "4.0.0-beta.47",
     "@playwright/test": "1.57.0",
+    "@shopify/api-codegen-preset": "2.0.0",
+    "@shopify/polaris-types": "^1.0.6",
     "@tanstack/devtools-vite": "0.6.0",
     "@tanstack/eslint-plugin-query": "5.95.2",
     "@tanstack/eslint-plugin-router": "1.161.6",
@@ -91,7 +94,8 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.2",
     "@vitest/browser-playwright": "4.1.4",
-    "jsonc-parser": "^3.3.1",
+    "graphql-config": "5.1.6",
+    "jsonc-parser": "3.3.1",
     "oxfmt": "0.38.0",
     "oxlint": "1.53.0",
     "oxlint-tsgolint": "0.16.0",
@@ -100,7 +104,7 @@
     "vitest": "4.1.4",
     "vitest-browser-react": "2.2.0",
     "wrangler": "4.81.1",
-    "zx": "^8.8.5"
+    "zx": "8.8.5"
   },
   "engines": {
     "node": "24.14.0"
