@@ -78,19 +78,34 @@ So the porting goal is parity with `refs/shopify-app-template`, adapted to TanSt
 - Login/install begin exists: `src/routes/auth.login.ts:32` + `shopifyLogin` redirect to install URL (`src/lib/Shopify.ts:353`).
 - D1-backed session persistence exists: `storeShopifySession`/`loadShopifySession` (`src/lib/Shopify.ts:92-136`) with schema in `migrations/0001_init.sql:1-9`.
 - Uninstall webhook validation + cleanup exists: `src/routes/webhooks.app.uninstalled.ts:5-23`.
-- Guarded app route exists: `src/routes/app.tsx:39-56`.
+- Guarded app route exists: `src/routes/app.tsx:42-89`.
 - Shopify API runtime config from env exists: `src/lib/Shopify.ts:46-66`.
 - Vite tunnel host allowlist for Shopify preview exists: `vite.config.ts:33-45`.
 
 ### Phase 2 status (done)
 
 - Embedded `AppProvider` shell parity for `/app` is already implemented:
-  - `src/routes/app.tsx:61-67` wraps app routes with `<AppProvider embedded apiKey={apiKey}>`.
+  - `src/routes/app.tsx:97-103` wraps app routes with `<AppProvider embedded apiKey={apiKey}>`.
   - `src/components/AppProvider.tsx:24-47` loads App Bridge + Polaris and handles `shopify:navigate`.
 - Iframe-safe auth transitions exist in auth/session-token flow (`src/lib/Shopify.ts:213-259`).
 - Global Shopify document headers are now applied for HTML responses in worker pipeline:
   - header applier exported at `src/lib/Shopify.ts:170-178`
   - applied after `serverEntry.fetch` for HTML responses at `src/worker.ts:113-129`
+
+### Phase 3 status (done)
+
+- Baseline app nav/page parity is implemented:
+  - `/app` nav includes Home + Additional page links: `src/routes/app.tsx:98-101`
+  - `/app/additional` route exists: `src/routes/app.additional.tsx:3-5`
+- `/app` index now includes the template-style Admin GraphQL mutation flow:
+  - server function entrypoint: `src/routes/app.index.tsx:37-42`
+  - `productCreate` mutation call: `src/routes/app.index.tsx:45-74`
+  - `productVariantsBulkUpdate` mutation call: `src/routes/app.index.tsx:91-109`
+- App Bridge interaction parity is implemented on `/app`:
+  - toast on successful generation: `src/routes/app.index.tsx:139-144`
+  - edit intent invocation: `src/routes/app.index.tsx:166-168`
+- Phase-3 required product scope is configured in local app TOML:
+  - `write_products`: `.shopify-cli/shopify.app.toml:21`
 
 ### Phase 2 curl checks
 
@@ -107,7 +122,8 @@ So the porting goal is parity with `refs/shopify-app-template`, adapted to TanSt
 
 - No `app/scopes_update` webhook subscription/handler yet.
   - current app config only includes `app/uninstalled` (`.shopify-cli/shopify.app.toml:15-18`)
-- Baseline template app surface parity still pending (`/app/additional` nav/page; `refs/shopify-app-template/app/routes/app.tsx:22`).
+- Scope/session drift reconciliation behavior is not implemented yet (phase 4).
+  - only uninstall cleanup webhook exists today: `src/routes/webhooks.app.uninstalled.ts:5-23`
 
 ## Port arc (high-level phases)
 
@@ -119,11 +135,11 @@ So the porting goal is parity with `refs/shopify-app-template`, adapted to TanSt
    - done: Shopify document response headers applied globally for HTML responses in worker
    - done: iframe-safe auth transitions (`/auth/session-token`, `/auth/exit-iframe`, `shopify-reload`) are implemented
 
-3. **Phase 3: app surface parity**
-   - port baseline app pages and nav structure from template route set (`/app`, `/app/additional`, etc.)
-   - wire server-side Admin API calls with TanStack server routes/functions
+3. **Phase 3 (done): app surface parity**
+   - done: baseline app pages and nav structure parity (`/app`, `/app/additional`)
+   - done: server-side Admin API mutation flow wired via TanStack server function
 
-4. **Phase 4: webhook/scopes parity**
+4. **Phase 4 (active): webhook/scopes parity**
    - add `app/scopes_update` webhook route and reconcile scope/session drift behavior
    - keep app-specific subscriptions in `.shopify-cli/shopify.app.toml`
 
@@ -150,5 +166,6 @@ This repo keeps D1 session storage as the platform-native replacement.
 
 - Phase 2 implementation research: `docs/shopify-phase-2-embedded-shell-research.md`
 - Phase 3 implementation research: `docs/shopify-phase-3-app-surface-research.md`
+- Phase 4 implementation research: `docs/shopify-phase-4-webhook-scopes-research.md`
 - Full-arc porting plan (this file): `docs/shopify-porting-arc-research.md`
 - Shopify docs mirror script behavior: `docs/shopify-docs-fetch-script-research.md`

@@ -1,6 +1,6 @@
 # Shopify phase 3 app surface parity research
 
-Phase 1 and phase 2 are complete. This doc scopes phase 3: app surface parity with the official template (`/app`, `/app/additional`) and TanStack-native server-side Admin API wiring.
+Phase 3 is complete. This doc records completion evidence and any remaining non-phase-3 gaps.
 
 ## Source of truth
 
@@ -11,7 +11,7 @@ Phase 1 and phase 2 are complete. This doc scopes phase 3: app surface parity wi
 - TanStack Start server functions (`createServerFn` callable from loaders/components): `refs/tan-start/docs/start/framework/react/guide/server-functions.md:8-9`, `refs/tan-start/docs/start/framework/react/guide/server-functions.md:43-50`
 - Shopify session-token requirement for backend requests: `refs/shopify-docs/docs/apps/build/authentication-authorization/session-tokens.md:33`, `refs/shopify-docs/docs/apps/build/authentication-authorization/access-tokens/token-exchange.md:31-33`
 
-## What the template does for phase 3
+## What the template requires for phase 3
 
 - App nav has two links under embedded shell:
   - Home: `refs/shopify-app-template/app/routes/app.tsx:21`
@@ -25,34 +25,37 @@ Phase 1 and phase 2 are complete. This doc scopes phase 3: app surface parity wi
 
 ## Current repo status
 
-- `/app` already has parent auth guard in `beforeLoad` through `createServerFn`: `src/routes/app.tsx:7-54`
-- Embedded shell parity is already in place: `src/routes/app.tsx:61-67`
-- Current nav only has Home (missing additional page link): `src/routes/app.tsx:62-64`
-- Current `/app` index is static connected-state UI (no Admin API mutation demo): `src/routes/app.index.tsx:10-16`
-- Backend auth/Admin primitive already exists and is reusable:
-  - `authenticateAdmin`: `src/lib/Shopify.ts:213-304`
-  - returns `admin.graphql` client: `src/lib/Shopify.ts:312-317`
+- `/app` auth guard remains parent-level in `beforeLoad` via `createServerFn`: `src/routes/app.tsx:42-89`
+- Embedded shell parity remains in place: `src/routes/app.tsx:97-103`
+- `/app` nav now includes both links required by template parity:
+  - Home + Additional page: `src/routes/app.tsx:99-100`
+- `/app/additional` route/page exists:
+  - route declaration: `src/routes/app.additional.tsx:3-5`
+- `/app` index now includes server-side Admin API mutation workflow:
+  - server function handler: `src/routes/app.index.tsx:37-125`
+  - `productCreate`: `src/routes/app.index.tsx:45-74`
+  - `productVariantsBulkUpdate`: `src/routes/app.index.tsx:91-109`
+  - JSON payload rendering blocks: `src/routes/app.index.tsx:217-230`
+- App Bridge interaction parity exists:
+  - toast behavior: `src/routes/app.index.tsx:139-144`
+  - edit intent: `src/routes/app.index.tsx:166-168`
+- Product scope required by template example is configured:
+  - `.shopify-cli/shopify.app.toml:21` (`write_products`)
 
 ## Gap analysis vs template parity
 
-- Missing route/page parity for `/app/additional`
-- Missing nav parity (`Additional page` link)
-- Missing app-index mutation workflow (`Generate a product`, JSON payload display)
-- Missing App Bridge interaction parity (`toast`, `edit:shopify/Product` intent) in route components
-- Scope mismatch for template mutation example:
-  - template requests `write_products`: `refs/shopify-app-template/shopify.app.toml:6`
-  - local app config currently has empty scopes: `.shopify-cli/shopify.app.toml:21`
+- No phase-3 parity gaps found in route surface, nav, or Admin API mutation wiring.
+- Remaining port gap is phase 4 (webhook/scopes parity), not phase 3:
+  - missing `app/scopes_update` subscription in local TOML: `.shopify-cli/shopify.app.toml:15-18`
+  - missing `app/scopes_update` webhook route in `src/routes/`
 
-## TanStack-native implementation shape (recommended)
+## Implemented TanStack-native shape
 
-1. Keep parent `/app` auth in `beforeLoad` (already aligned with TanStack guidance that `beforeLoad` runs before child route loading): `refs/tan-router/docs/router/guide/authenticated-routes.md:10-12`, `refs/tan-router/docs/router/guide/authenticated-routes.md:24`
-2. Add `src/routes/app.additional.tsx` for `/app/additional`
-3. Add nav link in `src/routes/app.tsx` to `/app/additional`
-4. Replace static `src/routes/app.index.tsx` with:
-   - POST `createServerFn` for product generation
-   - client-side loading state + result rendering
-   - optional App Bridge toast + edit intent parity
-5. Reuse existing `authenticateAdmin` + `admin.graphql` in the server function handler
+1. Parent `/app` auth stays in `beforeLoad` and runs before child route loading.
+2. `/app/additional` route is implemented in TanStack file-route form.
+3. App nav includes `/app` and `/app/additional` entries under embedded shell.
+4. `/app` index uses POST `createServerFn` for Admin GraphQL mutation flow.
+5. Existing `authenticateAdmin` + `admin.graphql` are reused in the server function.
 
 ## Auth nuance for phase 3 server-function calls
 
@@ -62,20 +65,19 @@ Shopify requires session-token auth on backend requests from embedded frontend:
 - Fetch a fresh token each request (1 minute TTL): `refs/shopify-docs/docs/apps/build/authentication-authorization/session-tokens.md:45`
 - Backend must authenticate incoming requests: `refs/shopify-docs/docs/apps/build/authentication-authorization/access-tokens/token-exchange.md:31-33`
 
-Current backend supports header token auth path (`src/lib/Shopify.ts:239-242`), so phase 3 should verify TanStack server-function requests carry this header in embedded runtime. If not, add a request path that supplies a valid token-bearing request before calling `authenticateAdmin`.
+Current backend supports both header token and `id_token` query-param auth (`src/lib/Shopify.ts:239-241`, `src/lib/Shopify.ts:260-274`). The implemented `/app` mutation flow uses this existing path without adding a separate auth transport layer.
 
-## Proposed implementation slices
+## Implementation slices (completed)
 
-1. Route parity slice: add `/app/additional` and nav link
-2. Mutation slice: add `generateProduct` server function and UI wiring in `/app`
-3. Session-token slice: verify/fix token transport for server-function requests
-4. Scope slice: set `write_products` and reinstall so offline token reflects new scope
-5. Validation slice: manual in-app check + `pnpm typecheck` + `pnpm lint`
+1. Route parity slice: `/app/additional` and nav link added.
+2. Mutation slice: `generateProduct` server function and UI wiring implemented.
+3. Auth slice: existing token auth paths reused for server-function requests.
+4. Scope slice: `write_products` declared in app TOML.
 
 ## Verification checklist
 
-- `/app` nav shows Home + Additional page
-- `/app/additional` renders under embedded shell without auth regressions
-- Generate-product action succeeds and renders both GraphQL payload blocks
-- No iframe/auth redirect loop on mutation request path
-- Static checks pass (`pnpm typecheck`, `pnpm lint`)
+- `/app` nav shows Home + Additional page (`src/routes/app.tsx:99-100`)
+- `/app/additional` renders under embedded shell (`src/routes/app.additional.tsx:3-39`)
+- Generate-product action is wired and renders both payload blocks (`src/routes/app.index.tsx:217-230`)
+- App Bridge toast/edit interactions are wired (`src/routes/app.index.tsx:139-144`, `src/routes/app.index.tsx:166-168`)
+- Static checks for this doc update were not re-run (research-only update)
