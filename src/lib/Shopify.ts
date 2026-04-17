@@ -1,5 +1,6 @@
 import "@shopify/shopify-api/adapters/web-api";
 import * as ShopifyApi from "@shopify/shopify-api";
+import type { SessionStorage } from "@shopify/shopify-app-session-storage";
 
 interface ShopifyRuntimeConfig {
   readonly apiKey: string;
@@ -89,16 +90,17 @@ const parseSessionPayload = (payload: string) => {
   return ShopifyApi.Session.fromPropertyArray(parsed as SessionEntry[], true);
 };
 
-export const storeShopifySession = async ({
-  env,
-  session,
-}: {
-  readonly env: Env;
-  readonly session: ShopifyApi.Session;
-}) => {
-  const payload = JSON.stringify(session.toPropertyArray(true));
-  await env.D1.prepare(
-    `
+class ShopifyD1SessionStorage implements SessionStorage {
+  private readonly env: Env;
+
+  constructor(env: Env) {
+    this.env = env;
+  }
+
+  public async storeSession(session: ShopifyApi.Session): Promise<boolean> {
+    const payload = JSON.stringify(session.toPropertyArray(true));
+    await this.env.D1.prepare(
+      `
 insert into ShopifySession (id, shop, payload)
 values (?1, ?2, ?3)
 on conflict(id) do update set
@@ -106,9 +108,78 @@ on conflict(id) do update set
   payload = excluded.payload,
   updatedAt = datetime('now')
 `,
-  )
-    .bind(session.id, session.shop, payload)
-    .run();
+    )
+      .bind(session.id, session.shop, payload)
+      .run();
+    return true;
+  }
+
+  public async loadSession(id: string): Promise<ShopifyApi.Session | undefined> {
+    const row = await this.env.D1.prepare(
+      "select payload from ShopifySession where id = ?1",
+    )
+      .bind(id)
+      .first<{ payload: string }>();
+    if (!row?.payload) {
+      return;
+    }
+    try {
+      return parseSessionPayload(row.payload);
+    } catch {
+      return undefined;
+    }
+  }
+
+  public async deleteSession(id: string): Promise<boolean> {
+    await this.env.D1.prepare("delete from ShopifySession where id = ?1")
+      .bind(id)
+      .run();
+    return true;
+  }
+
+  public async deleteSessions(ids: string[]): Promise<boolean> {
+    if (ids.length === 0) {
+      return true;
+    }
+    const placeholders = ids
+      .map((_, index) => `?${String(index + 1)}`)
+      .join(", ");
+    await this.env.D1.prepare(
+      `delete from ShopifySession where id in (${placeholders})`,
+    )
+      .bind(...ids)
+      .run();
+    return true;
+  }
+
+  public async findSessionsByShop(shop: string): Promise<ShopifyApi.Session[]> {
+    const rows = await this.env.D1.prepare(
+      "select payload from ShopifySession where shop = ?1",
+    )
+      .bind(shop)
+      .all<{ payload: string }>();
+    return rows.results.flatMap(({ payload }) => {
+      try {
+        const parsed = parseSessionPayload(payload);
+        return parsed ? [parsed] : [];
+      } catch {
+        return [];
+      }
+    });
+  }
+}
+
+export const createShopifySessionStorage = (env: Env): SessionStorage =>
+  new ShopifyD1SessionStorage(env);
+
+export const storeShopifySession = async ({
+  env,
+  session,
+}: {
+  readonly env: Env;
+  readonly session: ShopifyApi.Session;
+}) => {
+  await createShopifySessionStorage(env).storeSession(session);
 };
 
 export const loadShopifySession = async ({
@@ -118,21 +189,7 @@ export const loadShopifySession = async ({
   readonly env: Env;
   readonly id: string;
 }) => {
-  const row = await env.D1.prepare(
-    "select payload from ShopifySession where id = ?1",
-  )
-    .bind(id)
-    .first<{ payload: string }>();
-  if (!row?.payload) {
-    return;
-  }
-  let parsed: ReturnType<typeof parseSessionPayload>;
-  try {
-    parsed = parseSessionPayload(row.payload);
-  } catch {
-    parsed = void 0;
-  }
-  return parsed;
+  return createShopifySessionStorage(env).loadSession(id);
 };
 
 export const deleteShopifySessionsByShop = async ({
@@ -144,6 +201,40 @@ export const deleteShopifySessionsByShop = async ({
 }) => {
   await env.D1.prepare("delete from ShopifySession where shop = ?1")
     .bind(shop)
+    .run();
+};
+
+export const updateShopifySessionScope = async ({
+  env,
+  id,
+  scope,
+}: {
+  readonly env: Env;
+  readonly id: string;
+  readonly scope: string;
+}) => {
+  const row = await env.D1.prepare(
+    "select payload from ShopifySession where id = ?1",
+  )
+    .bind(id)
+    .first<{ payload: string }>();
+  if (!row?.payload) {
+    return;
+  }
+  let session: ShopifyApi.Session | undefined;
+  try {
+    session = parseSessionPayload(row.payload);
+  } catch {
+    session = undefined;
+  }
+  if (!session) {
+    return;
+  }
+  session.scope = scope;
+  await env.D1.prepare(
+    "update ShopifySession set payload = ?1, updatedAt = datetime('now') where id = ?2",
+  )
+    .bind(JSON.stringify(session.toPropertyArray(true)), id)
     .run();
 };
 
@@ -283,8 +374,9 @@ export const authenticateAdmin = async ({
   const dest = new URL(payload.dest);
   const sessionShop = dest.hostname;
   const sessionId = shopify.session.getOfflineId(sessionShop);
+  const sessionStorage = createShopifySessionStorage(env);
 
-  const existingSession = await loadShopifySession({ env, id: sessionId });
+  const existingSession = await sessionStorage.loadSession(sessionId);
 
   if (
     existingSession?.isActive(undefined, WITHIN_MILLISECONDS_OF_EXPIRY)
@@ -298,7 +390,7 @@ export const authenticateAdmin = async ({
     requestedTokenType: ShopifyApi.RequestedTokenType.OfflineAccessToken,
   });
 
-  await storeShopifySession({ env, session: newSession });
+  await sessionStorage.storeSession(newSession);
 
   return buildAdminContext(newSession, shopify);
 };

@@ -62,6 +62,7 @@
   "dependencies": {
     "@shopify/app-bridge-react": "4.2.10",
     "@shopify/shopify-api": "13.0.0",
+    "@shopify/shopify-app-session-storage": "5.0.0",
     "@tailwindcss/vite": "4.1.18",
     "@tanstack/react-devtools": "0.10.0",
     "@tanstack/react-form": "1.28.5",

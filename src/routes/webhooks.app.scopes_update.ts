@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { deleteShopifySessionsByShop, getShopifyApi } from "@/lib/Shopify";
+import { getShopifyApi, updateShopifySessionScope } from "@/lib/Shopify";
 
 export const Route = createFileRoute("/webhooks/app/scopes_update")({
   server: {
@@ -15,9 +15,16 @@ export const Route = createFileRoute("/webhooks/app/scopes_update")({
         if (!result.valid) {
           return new Response("Invalid webhook", { status: 401 });
         }
-        await deleteShopifySessionsByShop({
+        const payload = JSON.parse(rawBody) as {
+          readonly current?: readonly string[];
+        };
+        if (!Array.isArray(payload.current)) {
+          return new Response(null, { status: 200 });
+        }
+        await updateShopifySessionScope({
           env: context.env,
-          shop: result.domain,
+          id: shopify.session.getOfflineId(result.domain),
+          scope: payload.current.toString(),
         });
         return new Response(null, { status: 200 });
       },
