@@ -171,7 +171,7 @@ function AppIndex() {
   return (
     <s-page heading="Shopify app template">
       {hasHydrated && (
-        <s-button slot="primary-action" onClick={generate} {...(isLoading ? { loading: true } : {})}>
+        <s-button slot="primary-action" variant="primary" onClick={generate} {...(isLoading ? { loading: true } : {})}>
           Generate a product
         </s-button>
       )}
