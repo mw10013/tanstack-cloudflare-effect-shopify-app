@@ -5,6 +5,7 @@
     "./**/*.tsx",
     "./**/*.d.ts",
     "../worker-configuration.d.ts",
+    "../src/types/**/*.d.ts",
     "../src/routeTree.gen.ts"
   ],
   "exclude": [],

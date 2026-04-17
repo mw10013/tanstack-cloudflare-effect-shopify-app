@@ -1,5 +1,5 @@
 {
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx", "**/*.d.ts"],
   "exclude": ["refs/**/*", "test/**/*"],
   "compilerOptions": {
     "target": "ES2023",

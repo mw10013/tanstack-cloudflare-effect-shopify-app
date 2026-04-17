@@ -9,18 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AuthLoginRouteImport } from './routes/auth.login'
-import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AuthSplatRouteImport } from './routes/auth.$'
 import { Route as WebhooksAppUninstalledRouteImport } from './routes/webhooks.app.uninstalled'
 
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
@@ -31,15 +26,20 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthLoginRoute = AuthLoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => AuthRoute,
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRoute,
 } as any)
-const AuthCallbackRoute = AuthCallbackRouteImport.update({
-  id: '/callback',
-  path: '/callback',
-  getParentRoute: () => AuthRoute,
+const AuthLoginRoute = AuthLoginRouteImport.update({
+  id: '/auth/login',
+  path: '/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthSplatRoute = AuthSplatRouteImport.update({
+  id: '/auth/$',
+  path: '/auth/$',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const WebhooksAppUninstalledRoute = WebhooksAppUninstalledRouteImport.update({
   id: '/webhooks/app/uninstalled',
@@ -49,27 +49,26 @@ const WebhooksAppUninstalledRoute = WebhooksAppUninstalledRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/app': typeof AppRoute
-  '/auth': typeof AuthRouteWithChildren
-  '/auth/callback': typeof AuthCallbackRoute
+  '/app': typeof AppRouteWithChildren
+  '/auth/$': typeof AuthSplatRoute
   '/auth/login': typeof AuthLoginRoute
+  '/app/': typeof AppIndexRoute
   '/webhooks/app/uninstalled': typeof WebhooksAppUninstalledRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/app': typeof AppRoute
-  '/auth': typeof AuthRouteWithChildren
-  '/auth/callback': typeof AuthCallbackRoute
+  '/auth/$': typeof AuthSplatRoute
   '/auth/login': typeof AuthLoginRoute
+  '/app': typeof AppIndexRoute
   '/webhooks/app/uninstalled': typeof WebhooksAppUninstalledRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/app': typeof AppRoute
-  '/auth': typeof AuthRouteWithChildren
-  '/auth/callback': typeof AuthCallbackRoute
+  '/app': typeof AppRouteWithChildren
+  '/auth/$': typeof AuthSplatRoute
   '/auth/login': typeof AuthLoginRoute
+  '/app/': typeof AppIndexRoute
   '/webhooks/app/uninstalled': typeof WebhooksAppUninstalledRoute
 }
 export interface FileRouteTypes {
@@ -77,44 +76,32 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
-    | '/auth'
-    | '/auth/callback'
+    | '/auth/$'
     | '/auth/login'
+    | '/app/'
     | '/webhooks/app/uninstalled'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/app'
-    | '/auth'
-    | '/auth/callback'
-    | '/auth/login'
-    | '/webhooks/app/uninstalled'
+  to: '/' | '/auth/$' | '/auth/login' | '/app' | '/webhooks/app/uninstalled'
   id:
     | '__root__'
     | '/'
     | '/app'
-    | '/auth'
-    | '/auth/callback'
+    | '/auth/$'
     | '/auth/login'
+    | '/app/'
     | '/webhooks/app/uninstalled'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AppRoute: typeof AppRoute
-  AuthRoute: typeof AuthRouteWithChildren
+  AppRoute: typeof AppRouteWithChildren
+  AuthSplatRoute: typeof AuthSplatRoute
+  AuthLoginRoute: typeof AuthLoginRoute
   WebhooksAppUninstalledRoute: typeof WebhooksAppUninstalledRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/app': {
       id: '/app'
       path: '/app'
@@ -129,19 +116,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/': {
+      id: '/app/'
+      path: '/'
+      fullPath: '/app/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/auth/login': {
       id: '/auth/login'
-      path: '/login'
+      path: '/auth/login'
       fullPath: '/auth/login'
       preLoaderRoute: typeof AuthLoginRouteImport
-      parentRoute: typeof AuthRoute
+      parentRoute: typeof rootRouteImport
     }
-    '/auth/callback': {
-      id: '/auth/callback'
-      path: '/callback'
-      fullPath: '/auth/callback'
-      preLoaderRoute: typeof AuthCallbackRouteImport
-      parentRoute: typeof AuthRoute
+    '/auth/$': {
+      id: '/auth/$'
+      path: '/auth/$'
+      fullPath: '/auth/$'
+      preLoaderRoute: typeof AuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/webhooks/app/uninstalled': {
       id: '/webhooks/app/uninstalled'
@@ -153,22 +147,21 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AuthRouteChildren {
-  AuthCallbackRoute: typeof AuthCallbackRoute
-  AuthLoginRoute: typeof AuthLoginRoute
+interface AppRouteChildren {
+  AppIndexRoute: typeof AppIndexRoute
 }
 
-const AuthRouteChildren: AuthRouteChildren = {
-  AuthCallbackRoute: AuthCallbackRoute,
-  AuthLoginRoute: AuthLoginRoute,
+const AppRouteChildren: AppRouteChildren = {
+  AppIndexRoute: AppIndexRoute,
 }
 
-const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AppRoute: AppRoute,
-  AuthRoute: AuthRouteWithChildren,
+  AppRoute: AppRouteWithChildren,
+  AuthSplatRoute: AuthSplatRoute,
+  AuthLoginRoute: AuthLoginRoute,
   WebhooksAppUninstalledRoute: WebhooksAppUninstalledRoute,
 }
 export const routeTree = rootRouteImport

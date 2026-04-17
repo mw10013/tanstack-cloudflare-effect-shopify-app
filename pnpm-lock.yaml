@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@shopify/app-bridge-react':
+        specifier: 4.2.10
+        version: 4.2.10(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@shopify/shopify-api':
         specifier: 13.0.0
         version: 13.0.0
@@ -1368,6 +1371,15 @@ packages:
 
   '@shopify/admin-api-client@1.1.2':
     resolution: {integrity: sha512-sV5gS8x4kj0KLULlOJkoBzm+tu6tn+1PCK9a6inySv5qtzmf/JxDWtLgaW9vRXeXHo/Sl/p3mBWhY3//fKA8iw==}
+
+  '@shopify/app-bridge-react@4.2.10':
+    resolution: {integrity: sha512-/VhfsxIvWcK7w5rBY97WdSTApLEg+Z2dT9Zc+idAUiAi48R64nYalXDUG8ar5xRoINHFC/w+9WxYViAazpgfew==}
+    peerDependencies:
+      react: '*'
+      react-dom: '*'
+
+  '@shopify/app-bridge-types@0.7.0':
+    resolution: {integrity: sha512-A/DiGIjCBdd45ijMDKLgXrrGG68so3d25Yaeo0lv8ruWeljHGn3sA+UU1o/5BptSPkikDkgPPl8EQDxe4/KShw==}
 
   '@shopify/graphql-client@1.4.2':
     resolution: {integrity: sha512-C/fEyx6BZmTGeJv0HSsduhfn5ZbkXk0nePkyo0+xXxorP1I+uvx9pobdFxTfiPnOrh+P6QiKzBgIviksnSo4YA==}
@@ -4068,6 +4080,16 @@ snapshots:
   '@shopify/admin-api-client@1.1.2':
     dependencies:
       '@shopify/graphql-client': 1.4.2
+
+  '@shopify/app-bridge-react@4.2.10(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
+    dependencies:
+      '@shopify/app-bridge-types': 0.7.0
+      react: 19.2.3
+      react-dom: 19.2.3(react@19.2.3)
+
+  '@shopify/app-bridge-types@0.7.0':
+    dependencies:
+      '@standard-schema/spec': 1.1.0
 
   '@shopify/graphql-client@1.4.2': {}
 

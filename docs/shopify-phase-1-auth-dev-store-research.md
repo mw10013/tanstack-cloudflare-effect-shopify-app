@@ -8,11 +8,10 @@ Phase 1 is complete: app installs, auth flow runs, session persists, and `/app` 
 
 Evidence in code:
 
-- OAuth begin route: `src/routes/auth.ts:5`
-- OAuth callback + session persist: `src/routes/auth.callback.ts:5`
+- auth splat route for bounce/exit-iframe handling: `src/routes/auth.$.tsx:5`
 - uninstall webhook validation + session cleanup: `src/routes/webhooks.app.uninstalled.ts:5`
-- guarded app route + success response: `src/routes/app.ts:19`
-- Shopify API config from env vars: `src/lib/Shopify.ts:45`
+- guarded embedded app layout route: `src/routes/app.tsx:39`
+- Shopify API config from env vars: `src/lib/Shopify.ts:46`
 
 ## What we learned implementing phase 1
 
@@ -58,8 +57,8 @@ If `SHOPIFY_APP_URL`/`APP_URL`/`HOST` is absent, requests fail at runtime.
 
 Code path:
 
-- `src/lib/Shopify.ts:30-33`
-- `src/lib/Shopify.ts:45-47`
+- `src/lib/Shopify.ts:35-42`
+- `src/lib/Shopify.ts:50-52`
 
 ### 4) Config ownership should stay CLI-first
 
@@ -70,6 +69,36 @@ This repo uses Shopify CLI config path indirection intentionally:
 - `.shopify-cli/shopify.web.toml`
 
 Keep managing app config through this path to avoid accidental config drift.
+
+### 5) Cloudflare local runtime does not automatically inherit Shopify CLI process env
+
+Key references:
+
+- Shopify CLI provides local dev process env including `HOST/APP_URL` (`refs/shopify-docs/docs/apps/structure.md:136-143`).
+- Cloudflare local dev supports `.env` (and `.dev.vars`), and only includes process env when `CLOUDFLARE_INCLUDE_PROCESS_ENV=true` (`refs/cloudflare-docs/src/content/partials/workers/secrets-in-dev.mdx:9-17`, `refs/cloudflare-docs/src/content/partials/workers/secrets-in-dev.mdx:45-46`).
+- Runtime config requires one of `SHOPIFY_APP_URL`/`APP_URL`/`HOST` (`src/lib/Shopify.ts:35-52`).
+
+This mismatch is the root cause of: `SHOPIFY_APP_URL or APP_URL or HOST is required`.
+
+## Local runbook for dynamic tunnel URL (no hardcoding)
+
+1. Run dev through Shopify CLI (`pnpm shopify:dev`) so tunnel URL exists in parent process env.
+2. Ensure Cloudflare local runtime can consume parent process env:
+   - add `CLOUDFLARE_INCLUDE_PROCESS_ENV=true` to the dev command path.
+3. Normalize app URL at command runtime (no file regeneration):
+   - `SHOPIFY_APP_URL=${SHOPIFY_APP_URL:-${APP_URL:-$HOST}}`
+4. Keep credentials in local env (`SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`) as before.
+5. Restart dev session after changing local env loading behavior.
+
+## Production ownership (important)
+
+Shopify docs: local dev envs are injected by CLI, but deployed env vars must be set in hosting provider (`refs/shopify-docs/docs/apps/launch/deployment/deploy-to-hosting-service.md:153-166`).
+
+For Cloudflare production:
+
+- Set `SHOPIFY_APP_URL` in Worker vars/secrets (platform-owned value).
+- Set `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET` as secrets.
+- Keep `shopify.app.toml` `application_url` in sync with deployed app URL (`refs/shopify-docs/docs/apps/launch/deployment/deploy-to-hosting-service.md:177-183`).
 
 ## Canonical phase 1 runbook (known-good)
 
@@ -88,9 +117,10 @@ pnpm shopify:dev
 
 4. If preview fails with host-block message, restart after any `vite.config.ts` host changes.
 
-5. Verify `/app` success text from guarded route:
+5. Verify app loads at `/app` inside Shopify admin iframe:
 
-- `src/routes/app.ts:40`
+- route auth gate: `src/routes/app.tsx:39-53`
+- rendered page: `src/routes/app.index.tsx:10-16`
 
 ## Phase 2+ focus (template-parity porting)
 
