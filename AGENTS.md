@@ -8,7 +8,7 @@
 
 ## Project
 
-- `tanstack-cloudflare-effect-shopify-app` is a TanStack Start and Cloudflare Workers application with effect v4, shadcn/ui components (Base UI variant), TypeScript, Tailwind CSS.
+- `tanstack-cloudflare-effect-shopify-app` is a port of refs/shopify-app-template for TanStack Start, Cloudflare and effect v4.
 - Route modules are in `src/routes/` and use file route conventions.
 
 ## Port Configuration
@@ -35,12 +35,17 @@ Downloaded source code of libraries are in `refs/` for reference.
 - **TanStack Router**: `refs/tan-router/docs/` (MDX files - router/framework/react)
 - **TanStack Query**: `refs/tan-query/docs/` (Markdown files - framework/react, reference, eslint)
 - **TanStack Form**: `refs/tan-form/docs/` (Markdown files)
-- **Shadcn UI**: `refs/shadcn/apps/v4/content/docs/` (MDX files)
-- **Base UI**: `refs/base-ui/docs/src/app/(docs)/(content)/react/` (MDX files in subdirs)
-- **Better Auth**: `refs/better-auth/docs/content/docs/` (MDX files - plugins, integrations, adapters, guides, concepts, authentication, reference)
 - **Cloudflare Docs**: `refs/cloudflare-docs/src/content/docs/` (MDX files)
 - **Effect v4 Docs**: `refs/effect4/ai-docs/src/`
 - **Shopify App JS**: `refs/shopify-app-js/` (source for `shopify-api`, `shopify-app-react-router`, and session storage adapters)
+- **Shopify App Template**: `refs/shopify-app-template/`
+- **Shopify Bridge**: `refs/shopify-bridge/`
+- **Shopify Codegen**: `refs/shopify-codegen/`
+- **Shopify Docs**: `refs/shopify-docs/`
+- **Shopify React Renderer**: `refs/shopify-rr/`
+- **Shopify Session Prisma**: `refs/shopify-session-prisma/`
+- **Workers SDK**: `refs/workers-sdk/`
+- **Vitest**: `refs/vitest/`
 
 ## Commands
 
