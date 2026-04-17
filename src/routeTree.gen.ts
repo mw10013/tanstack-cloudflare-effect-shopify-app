@@ -14,6 +14,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AuthLoginRouteImport } from './routes/auth.login'
 import { Route as AuthSplatRouteImport } from './routes/auth.$'
+import { Route as AppAdditionalRouteImport } from './routes/app.additional'
 import { Route as WebhooksAppUninstalledRouteImport } from './routes/webhooks.app.uninstalled'
 
 const AppRoute = AppRouteImport.update({
@@ -41,6 +42,11 @@ const AuthSplatRoute = AuthSplatRouteImport.update({
   path: '/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppAdditionalRoute = AppAdditionalRouteImport.update({
+  id: '/additional',
+  path: '/additional',
+  getParentRoute: () => AppRoute,
+} as any)
 const WebhooksAppUninstalledRoute = WebhooksAppUninstalledRouteImport.update({
   id: '/webhooks/app/uninstalled',
   path: '/webhooks/app/uninstalled',
@@ -50,6 +56,7 @@ const WebhooksAppUninstalledRoute = WebhooksAppUninstalledRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/additional': typeof AppAdditionalRoute
   '/auth/$': typeof AuthSplatRoute
   '/auth/login': typeof AuthLoginRoute
   '/app/': typeof AppIndexRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/app/additional': typeof AppAdditionalRoute
   '/auth/$': typeof AuthSplatRoute
   '/auth/login': typeof AuthLoginRoute
   '/app': typeof AppIndexRoute
@@ -66,6 +74,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/additional': typeof AppAdditionalRoute
   '/auth/$': typeof AuthSplatRoute
   '/auth/login': typeof AuthLoginRoute
   '/app/': typeof AppIndexRoute
@@ -76,16 +85,24 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/app/additional'
     | '/auth/$'
     | '/auth/login'
     | '/app/'
     | '/webhooks/app/uninstalled'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth/$' | '/auth/login' | '/app' | '/webhooks/app/uninstalled'
+  to:
+    | '/'
+    | '/app/additional'
+    | '/auth/$'
+    | '/auth/login'
+    | '/app'
+    | '/webhooks/app/uninstalled'
   id:
     | '__root__'
     | '/'
     | '/app'
+    | '/app/additional'
     | '/auth/$'
     | '/auth/login'
     | '/app/'
@@ -137,6 +154,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/additional': {
+      id: '/app/additional'
+      path: '/additional'
+      fullPath: '/app/additional'
+      preLoaderRoute: typeof AppAdditionalRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/webhooks/app/uninstalled': {
       id: '/webhooks/app/uninstalled'
       path: '/webhooks/app/uninstalled'
@@ -148,10 +172,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAdditionalRoute: typeof AppAdditionalRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAdditionalRoute: AppAdditionalRoute,
   AppIndexRoute: AppIndexRoute,
 }
 
