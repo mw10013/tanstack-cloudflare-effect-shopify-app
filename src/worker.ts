@@ -98,6 +98,7 @@ const makeRunEffect = (env: Env, request: Request) => {
  */
 export interface ServerContext {
   env: Env;
+  request: Request;
   runEffect: ReturnType<typeof makeRunEffect>;
 }
 
@@ -113,6 +114,7 @@ export default {
     const response = await serverEntry.fetch(request, {
       context: {
         env,
+        request,
         runEffect,
       },
     });
