@@ -61,6 +61,18 @@ Ref: `refs/shopify-app-js/packages/apps/session-storage/shopify-app-session-stor
 Package README confirms all storage adapters implement this interface.
 Ref: `refs/shopify-app-js/packages/apps/session-storage/README.md:5`
 
+Important for dependency concern: the core interface package is lightweight and does not pull Prisma.
+
+```json
+// refs/shopify-app-js/packages/apps/session-storage/shopify-app-session-storage/package.json
+"dependencies": {},
+"peerDependencies": {
+  "@shopify/shopify-api": "^13.0.0"
+}
+```
+
+Ref: `refs/shopify-app-js/packages/apps/session-storage/shopify-app-session-storage/package.json:46`
+
 ## 3) How template/auth internals use the interface
 
 In `shopify-app-react-router`, admin auth loads/stores via `config.sessionStorage`:
@@ -125,18 +137,31 @@ Not currently exposed as interface methods:
 - `deleteSessions(ids[])`
 - `findSessionsByShop(shop)`
 
+`deleteShopifySessionsByShop(shop)` is not part of Shopify's interface, but template still does delete-by-shop directly at DB layer for uninstall (`db.session.deleteMany({ where: { shop } })`).
+Ref: `refs/shopify-app-template/app/routes/webhooks.app.uninstalled.tsx:13`
+
 Also, template `SCOPES_UPDATE` updates the current session scope in DB, while port currently deletes all sessions by shop for both `APP_UNINSTALLED` and `APP_SCOPES_UPDATE`.
 Refs: `refs/shopify-app-template/app/routes/webhooks.app.scopes_update.tsx:11`, `src/routes/webhooks.app.scopes_update.ts:18`
 
-## 6) D1 parity direction (practical)
+## 6) Locked parity direction
 
-For closest parity with Shopify stack while staying D1-native:
+If target is strict template parity, use this split:
 
-1. Add a D1-backed `SessionStorage` implementation (same method names/signatures).
-2. Internally reuse current payload-row approach (`id`, `shop`, `payload`) to keep migration simple.
-3. Add `findSessionsByShop`, `deleteSession`, `deleteSessions` queries.
-4. Keep webhook routes free to use either:
-   - adapter methods, or
-   - direct D1 SQL (template-style direct DB use is precedent).
+1. Implement official `SessionStorage` interface from `@shopify/shopify-app-session-storage` in D1, no Prisma package.
+2. Use storage in the same way template/auth stack uses it: primarily `loadSession` and `storeSession` for auth/token exchange flows.
+3. Keep webhook DB mutations as direct D1 operations (template does direct Prisma DB operations in webhook routes).
+4. Keep `delete by shop` as a direct D1 webhook operation, not part of the `SessionStorage` abstraction.
 
-This gives API-level parity with Shopify interface plus minimal schema churn for current port.
+Clarification on "add queries": this does not mean adding new app-level behavior. It means implementing required methods because the official interface includes them (`deleteSession`, `deleteSessions`, `findSessionsByShop`). They can exist only for interface completeness/compatibility and remain unused by app code if not needed.
+
+## 7) Webhook DB parity status (current)
+
+- `APP_UNINSTALLED`: effectively parity on DB intent (delete sessions for shop), implemented in D1 via `deleteShopifySessionsByShop`.
+  Refs: `refs/shopify-app-template/app/routes/webhooks.app.uninstalled.tsx:13`, `src/routes/webhooks.app.uninstalled.ts:18`
+- `APP_SCOPES_UPDATE`: not parity today.
+  - Template updates scope for the authenticated offline session row (`where: { id: session.id }`).
+    Ref: `refs/shopify-app-template/app/routes/webhooks.app.scopes_update.tsx:11`
+  - Port currently deletes all sessions for shop.
+    Ref: `src/routes/webhooks.app.scopes_update.ts:18`
+
+So yes: webhook DB ops are not fully parity today; `SCOPES_UPDATE` is the concrete mismatch.
