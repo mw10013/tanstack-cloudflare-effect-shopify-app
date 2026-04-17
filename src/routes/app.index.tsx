@@ -182,11 +182,6 @@ function AppIndex() {
       <s-button slot="primary-action" onClick={generate} {...(isLoading ? { loading: true } : {})}>
         Generate a product
       </s-button>
-      <s-section heading="Connected">
-        <s-paragraph>
-          App is installed and running for <s-text fontWeight="bold">{shop}</s-text>.
-        </s-paragraph>
-      </s-section>
       <s-section heading="Congrats on creating a new Shopify app">
         <s-paragraph>
           This embedded app template uses{" "}
