@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 
 import { authenticateAdmin } from "@/lib/Shopify";
@@ -131,6 +131,7 @@ export const Route = createFileRoute("/app/")({
 
 function AppIndex() {
   const shopify = useAppBridge();
+  const hasHydrated = useHydrated();
   const [isLoading, setIsLoading] = React.useState(false);
   const [result, setResult] = React.useState<GenerateProductResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -169,9 +170,11 @@ function AppIndex() {
 
   return (
     <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generate} {...(isLoading ? { loading: true } : {})}>
-        Generate a product
-      </s-button>
+      {hasHydrated && (
+        <s-button slot="primary-action" onClick={generate} {...(isLoading ? { loading: true } : {})}>
+          Generate a product
+        </s-button>
+      )}
       <s-section heading="Congrats on creating a new Shopify app 🎉">
         <s-paragraph>
           This embedded app template uses{" "}
