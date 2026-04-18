@@ -1,4 +1,4 @@
-import { defineConfig, devices } from "@playwright/test";
+import { defineConfig } from "@playwright/test";
 import path from "path";
 
 try {
@@ -7,15 +7,9 @@ try {
   void _error;
 }
 
-const storageStatePath = path.join(
-  process.cwd(),
-  "playwright",
-  ".auth",
-  "shopify-admin.json",
-);
-
 export default defineConfig({
-  testDir: "./playwright/tests",
+  testDir: "./e2e",
+  testMatch: ["**/*.setup.ts", "**/*.spec.ts"],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -24,16 +18,4 @@ export default defineConfig({
   use: {
     trace: "on-first-retry",
   },
-  projects: [
-    {
-      name: "setup",
-      testMatch: /.*\.setup\.ts/,
-      use: { ...devices["Desktop Chrome"] },
-    },
-    {
-      name: "chromium",
-      dependencies: ["setup"],
-      use: { ...devices["Desktop Chrome"], storageState: storageStatePath },
-    },
-  ],
 });

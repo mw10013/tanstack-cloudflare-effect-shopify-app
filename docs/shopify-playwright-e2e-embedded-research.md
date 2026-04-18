@@ -1,51 +1,55 @@
 # Shopify embedded admin Playwright E2E
 
-Run Playwright against the real Shopify admin embedded surface (iframe) and assert:
-- Shopify admin loads the app home
-- the embedded app iframe URL includes `embedded=1`, `host=`, `shop=`
+This repo runs Playwright against Shopify Admin (embedded iframe) and checks that the app home iframe is present and uses embedded params (`embedded=1`, `host=`, `shop=`).
 
-Shopify embeds App Home in an iframe (`refs/shopify-docs/docs/apps/build/admin.md`):
-```md
-The Shopify admin provides a surface for apps to render the UX for their App Home. On the web, the surface is an iframe...
-```
+Shopify admin embed model reference:
+- `refs/shopify-docs/docs/apps/build/admin.md`
 
-Playwright recommends a setup project + `storageState` (`refs/playwright/docs/src/auth.md`):
-```md
-...declare [setup] as a dependency... use the authenticated state as `storageState`.
-```
+Playwright auth-with-setup pattern reference:
+- `refs/playwright/docs/src/auth.md`
+- `refs/playwright/docs/src/getting-started-vscode-js.md`
 
 ## Current repo setup
 
-- Config: `playwright/playwright.config.ts`
-- Auth setup test: `playwright/tests/shopify-admin.setup.ts`
-- Embedded assertion test: `playwright/tests/embedded-app-home.spec.ts`
+- Config: `playwright.config.ts`
+- Test directory: `e2e/`
+- Setup/auth test: `e2e/shopify-admin.setup.ts`
+- Embedded assertion test: `e2e/embedded-app-home.spec.ts`
+- Auth storage file: `playwright/.auth/shopify-admin.json` (gitignored in `.gitignore`)
 
-## Preview URL (stable for this repo)
+## Current test inventory
 
-Default Preview URL (override with `SHOPIFY_PREVIEW_URL` if needed):
+`pnpm exec playwright test --list` currently reports 2 tests in 2 files:
+- `shopify-admin.setup.ts > shopify admin auth`
+- `embedded-app-home.spec.ts > embedded app home loads`
+
+`pnpm test:e2e` runs only `*.spec.ts` tests.
+`pnpm test:e2e:setup` runs only `*.setup.ts` tests.
+
+## Preview URL
+
+Default preview URL (override with `SHOPIFY_PREVIEW_URL`):
+
 ```text
 https://admin.shopify.com/store/sandbox-shop-01/apps/9a91c9ff6ba488dafb39a7c696429753?dev-console=show
 ```
 
-When the app is running via `pnpm shopify:dev`, Shopify admin will embed the app using a tunnel URL (often `*.trycloudflare.com`) and append `embedded=1`, `host=`, `shop=` to the iframe URL.
+## Local run flow
 
-## Credential storage
+1) Start Shopify dev tunnel:
+- `pnpm shopify:dev`
 
-`pnpm test:e2e:setup` writes Shopify admin cookies/storage to:
-- `playwright/.auth/shopify-admin.json`
+2) Bootstrap/reuse admin auth (headed):
+- `pnpm test:e2e:setup`
+- Force a fresh login: `SHOPIFY_E2E_REAUTH=1 pnpm test:e2e:setup`
+- Log in in the opened browser.
+- Resume the paused test to persist `playwright/.auth/shopify-admin.json`.
 
-It is gitignored (`.gitignore` contains `playwright/.auth/`).
+3) Run embedded assertion test (headed):
+- `pnpm test:e2e:run`
 
-To force refresh login, set:
-- `SHOPIFY_E2E_REAUTH=1`
+## VS Code Playwright extension notes
 
-## How to run (local)
-
-1) Start Shopify dev:
-   - `pnpm shopify:dev`
-2) One-time login/bootstrap (headed):
-   - `pnpm test:e2e:setup`
-   - complete Shopify login in the browser
-   - resume the paused Playwright run so it saves `playwright/.auth/shopify-admin.json`
-3) Run embedded assertions (headed):
-   - `pnpm test:e2e:chromium`
+- There are no Playwright projects in config now.
+- Test Explorer should show both files in `e2e/` directly.
+- If one is missing, use the Playwright sidebar refresh action and reload the VS Code window.

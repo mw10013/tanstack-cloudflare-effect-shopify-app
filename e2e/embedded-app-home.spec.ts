@@ -1,7 +1,17 @@
 import { test, expect } from "@playwright/test";
+import path from "path";
+
+const storageStatePath = path.join(
+  process.cwd(),
+  "playwright",
+  ".auth",
+  "shopify-admin.json",
+);
 
 const isEmbeddedFrameUrl = (url: string) =>
   url.includes("embedded=1") && url.includes("host=") && url.includes("shop=");
+
+test.use({ storageState: storageStatePath });
 
 test("embedded app home loads", async ({ page }) => {
   test.setTimeout(2 * 60 * 1000);
