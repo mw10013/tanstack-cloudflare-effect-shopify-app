@@ -46,6 +46,7 @@
     "refs:cloudflare-docs": "rm -rf refs/cloudflare-docs && mkdir -p refs/cloudflare-docs && curl -L https://github.com/cloudflare/cloudflare-docs/archive/refs/heads/production.tar.gz | tar -xz -C refs/cloudflare-docs --strip-components=1",
     "refs:effect4": "rm -rf refs/effect4 && mkdir -p refs/effect4 && curl -L https://github.com/Effect-TS/effect-smol/archive/refs/tags/effect@4.0.0-beta.47.tar.gz | tar -xz -C refs/effect4 --strip-components=1",
     "refs:vitest": "rm -rf refs/vitest && mkdir -p refs/vitest && curl -L https://github.com/vitest-dev/vitest/archive/refs/tags/v4.1.4.tar.gz | tar -xz -C refs/vitest --strip-components=1",
+    "refs:playwright": "rm -rf refs/playwright && mkdir -p refs/playwright && curl -L https://github.com/microsoft/playwright/archive/refs/tags/v1.57.0.tar.gz | tar -xz -C refs/playwright --strip-components=1",
     "refs:workers-sdk": "rm -rf refs/workers-sdk && mkdir -p refs/workers-sdk && curl -L https://github.com/cloudflare/workers-sdk/archive/refs/tags/wrangler@4.81.1.tar.gz | tar -xz -C refs/workers-sdk --strip-components=1",
     "refs:react-router": "rm -rf refs/react-router && mkdir -p refs/react-router && curl -L https://github.com/remix-run/react-router/archive/refs/tags/react-router@7.14.1.tar.gz | tar -xz -C refs/react-router --strip-components=1",
     "refs:tces": "rm -rf refs/tces && mkdir -p refs/tces && curl -L https://github.com/mw10013/tanstack-cloudflare-effect-saas/archive/refs/heads/main.tar.gz | tar -xz -C refs/tces --strip-components=1",
