@@ -2,9 +2,9 @@
 
 This doc captures a redesign of auth/bootstrap for embedded Shopify admin E2E so we can run `pnpm test:e2e` directly, without a manual pause/setup test flow.
 
-## Current repo behavior (problem statement)
+## Previous repo behavior (problem statement)
 
-From code today:
+From code before Option A:
 
 - `e2e/shopify-admin.setup.ts` is a manual bootstrap test (`await page.pause()`) that writes auth state.
 - It has reauth toggle logic: `const shouldReauth = process.env.SHOPIFY_E2E_REAUTH === "1"`.
@@ -14,7 +14,15 @@ From code today:
   - `pnpm test:e2e:setup` -> `.setup.ts`
   - `pnpm test:e2e` -> `.spec.ts`
 
-This is clunky for day-to-day runs and diverges from requested behavior.
+This was clunky for day-to-day runs and diverged from requested behavior.
+
+## Applied Option A snapshot
+
+- `playwright.config.ts` now defines a `setup` project and an `e2e` project with `dependencies: ["setup"]`.
+- `e2e` project sets `use.storageState` to `playwright/.auth/shopify-admin.json`.
+- `e2e/shopify-admin.setup.ts` now auto-logins with env credentials and no manual pause.
+- `e2e/embedded-app-home.spec.ts` uses required `SHOPIFY_PREVIEW_URL` (no fallback URL).
+- `test:e2e:setup` script is removed; `pnpm test:e2e` runs `--project=e2e` and Playwright resolves setup dependency.
 
 ## Requested target behavior
 
@@ -169,7 +177,7 @@ Cons:
 
 ## Recommended direction for this repo
 
-Given stated preference (no special setup run/test), Option B is the best fit.
+Given Playwright guidance + your latest direction, Option A is the best fit.
 
 Implementation shape:
 
@@ -177,18 +185,22 @@ Implementation shape:
    - Add `.env.playwright` (ignored).
    - Add `.env.playwright.example` (committed).
    - Load in `playwright.config.ts` before `defineConfig`.
-2. Required envs (hard-required; fail fast if missing)
+2. Required envs
    - `SHOPIFY_PREVIEW_URL`
    - `SHOPIFY_E2E_LOGIN_EMAIL`
    - `SHOPIFY_E2E_LOGIN_PASSWORD`
-3. Auth bootstrap
-   - `globalSetup` creates `playwright/.auth` if needed.
+3. Auth bootstrap via setup project + dependencies
+   - `setup` project creates `playwright/.auth` if needed.
    - If `playwright/.auth/shopify-admin.json` exists, reuse and exit.
-   - Else automate login, then save storage state.
-4. Remove old behavior
+   - Else automate login in setup test, then save storage state.
+4. Wiring
+   - `e2e` project depends on `setup` via `dependencies: ["setup"]`.
+   - `e2e` project sets `use.storageState` to the saved auth file.
+   - `pnpm test:e2e` runs the `e2e` project; Playwright auto-runs `setup` first.
+5. Remove old behavior
    - Delete fallback preview URL constants.
    - Remove `SHOPIFY_E2E_REAUTH` code path.
-   - Remove `test:e2e:setup` script.
+   - Remove `test:e2e:setup` script from package scripts.
 
 ## Notes on env-file placement
 
@@ -202,10 +214,9 @@ Two viable paths:
 
 Given request "Playwright with its own `.env`", prefer dedicated `.env.playwright*` files.
 
-## Open questions before implementation
+## Open questions / risk notes
 
-- Does the Shopify test account require 2FA/challenge flows that block pure email+password automation?
-- Are we OK with `globalSetup` trade-off (less setup visibility in HTML report) in exchange for no special setup test?
+- Shopify may trigger occasional additional auth challenges (2FA/captcha/device verification). If triggered, setup test will fail until account flow is cleared.
 
 ## Sources
 

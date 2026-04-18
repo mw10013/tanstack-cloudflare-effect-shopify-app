@@ -1,16 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { storageStatePath } from "./storage-state";
+import { requiredEnv } from "./env";
 
 const isEmbeddedFrameUrl = (url: string) =>
   url.includes("embedded=1") && url.includes("host=") && url.includes("shop=");
 
-test.use({ storageState: storageStatePath });
-
 test("embedded app home loads", async ({ page }) => {
   test.setTimeout(2 * 60 * 1000);
-  const defaultPreviewUrl =
-    "https://admin.shopify.com/store/sandbox-shop-01/apps/9a91c9ff6ba488dafb39a7c696429753?dev-console=show";
-  await page.goto(process.env.SHOPIFY_PREVIEW_URL ?? defaultPreviewUrl);
+  await page.goto(requiredEnv("SHOPIFY_PREVIEW_URL"));
 
   await expect
     .poll(

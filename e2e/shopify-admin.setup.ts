@@ -1,6 +1,8 @@
-import { test as setup } from "@playwright/test";
+import { expect, test as setup } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import * as fs from "fs";
 import path from "path";
+import { requiredEnv } from "./env";
 import { storageStatePath } from "./storage-state";
 
 /**
@@ -11,27 +13,168 @@ import { storageStatePath } from "./storage-state";
  * - This setup test saves an authenticated `storageState` so subsequent tests can reuse it.
  *
  * Behavior:
- * - If `playwright/.auth/shopify-admin.json` exists and `SHOPIFY_E2E_REAUTH` !== "1", exit quickly.
- * - Otherwise open `SHOPIFY_PREVIEW_URL` (or the repo default), pause for manual login, then save
- *   `storageState` to `playwright/.auth/shopify-admin.json` (gitignored).
+ * - If `playwright/.auth/shopify-admin.json` exists, exit quickly.
+ * - Otherwise open `SHOPIFY_PREVIEW_URL`, login with `SHOPIFY_E2E_LOGIN_EMAIL`
+ *   + `SHOPIFY_E2E_LOGIN_PASSWORD`, then save `storageState` to
+ *   `playwright/.auth/shopify-admin.json` (gitignored).
  */
+const isEmbeddedFrameUrl = (url: string) =>
+  url.includes("embedded=1") && url.includes("host=") && url.includes("shop=");
+
+const hasEmbeddedFrame = (page: Page) =>
+  page
+    .frames()
+    .some((f) => f !== page.mainFrame() && isEmbeddedFrameUrl(f.url()));
+
+const waitForEmbeddedFrame = async (page: Page, timeoutMs: number) => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (hasEmbeddedFrame(page)) return true;
+    await page.waitForTimeout(1000);
+  }
+  return false;
+};
+
 setup("shopify admin auth", async ({ page }) => {
   setup.setTimeout(10 * 60 * 1000);
   await fs.promises.mkdir(path.dirname(storageStatePath), { recursive: true });
 
-  const shouldReauth = process.env.SHOPIFY_E2E_REAUTH === "1";
-  if (!shouldReauth) {
-    try {
-      await fs.promises.stat(storageStatePath);
+  try {
+    await fs.promises.stat(storageStatePath);
+    return;
+  } catch (_error) {
+    void _error;
+  }
+
+  const previewUrl = requiredEnv("SHOPIFY_PREVIEW_URL");
+  const loginEmail = requiredEnv("SHOPIFY_E2E_LOGIN_EMAIL");
+  const loginPassword = requiredEnv("SHOPIFY_E2E_LOGIN_PASSWORD");
+
+  await page.goto(previewUrl);
+
+  if (
+    page
+      .frames()
+      .some((f) => f !== page.mainFrame() && isEmbeddedFrameUrl(f.url()))
+  ) {
+    await page.context().storageState({ path: storageStatePath });
+    return;
+  }
+
+  const accountLookupForm = page.locator("form#account_lookup").first();
+
+  const submitLookupForm = async () => {
+    const primaryLoginButton = accountLookupForm
+      .locator('button.login-button[type="submit"], button[type="submit"]')
+      .first();
+
+    if (await primaryLoginButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await primaryLoginButton.click();
       return;
-    } catch (_error) {
-      void _error;
+    }
+
+    await accountLookupForm.evaluate((form) => {
+      (form as HTMLFormElement).requestSubmit();
+    });
+  };
+
+  const refreshCaptchaButton = page.locator("#refresh-page-trigger").first();
+  const captchaErrorBanner = page
+    .getByText(/Captcha couldn't load\. Refresh the page and try again\./i)
+    .first();
+
+  if (await captchaErrorBanner.isVisible({ timeout: 2000 }).catch(() => false)) {
+    await refreshCaptchaButton.click();
+    await page.waitForLoadState("domcontentloaded");
+  }
+
+  const emailInput = accountLookupForm
+    .locator(
+      'input[name="account[email]"], input[type="email"], input[autocomplete="username"], input[autocomplete="email"], input[name="email"]',
+    )
+    .first();
+
+  if (await emailInput.isVisible({ timeout: 15_000 }).catch(() => false)) {
+    await emailInput.fill(loginEmail);
+    await submitLookupForm();
+  }
+
+  if (await captchaErrorBanner.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await refreshCaptchaButton.click();
+    await page.waitForLoadState("domcontentloaded");
+    if (await emailInput.isVisible({ timeout: 15_000 }).catch(() => false)) {
+      await emailInput.fill(loginEmail);
+      await submitLookupForm();
     }
   }
 
-  const defaultPreviewUrl =
-    "https://admin.shopify.com/store/sandbox-shop-01/apps/9a91c9ff6ba488dafb39a7c696429753?dev-console=show";
-  await page.goto(process.env.SHOPIFY_PREVIEW_URL ?? defaultPreviewUrl);
-  await page.pause();
+  const passwordInputByName = accountLookupForm
+    .locator(
+      'input[name="account[password]"]:not([tabindex="-1"]), input[type="password"]:not([tabindex="-1"]), input[autocomplete="current-password"]:not([tabindex="-1"]), input[name="password"]:not([tabindex="-1"])',
+    )
+    .first();
+
+  const passwordInputByLabel = page.getByLabel(/password/i).first();
+
+  const resolvePasswordInput = async () => {
+    if (
+      await passwordInputByName.isVisible({ timeout: 1000 }).catch(() => false)
+    ) {
+      return passwordInputByName;
+    }
+    if (
+      await passwordInputByLabel.isVisible({ timeout: 1000 }).catch(() => false)
+    ) {
+      return passwordInputByLabel;
+    }
+    return null;
+  };
+
+  let passwordInput = await resolvePasswordInput();
+
+  if (!passwordInput) {
+    await submitLookupForm();
+    passwordInput = await resolvePasswordInput();
+  }
+
+  if (!passwordInput) {
+    await expect
+      .poll(
+        async () => {
+          const resolvedPasswordInput = await resolvePasswordInput();
+          if (resolvedPasswordInput) return "password";
+          if (
+            page
+              .frames()
+              .some((f) => f !== page.mainFrame() && isEmbeddedFrameUrl(f.url()))
+          ) {
+            return "embedded";
+          }
+          return "pending";
+        },
+        { timeout: 30_000 },
+      )
+      .not.toBe("pending");
+    passwordInput = await resolvePasswordInput();
+  }
+
+  if (passwordInput) {
+    await passwordInput.fill(loginPassword);
+    await submitLookupForm();
+  }
+
+  await page.goto(previewUrl);
+
+  const embeddedAfterAutoAttempt = await waitForEmbeddedFrame(page, 30_000);
+
+  if (!embeddedAfterAutoAttempt && !process.env.CI) {
+    await page.pause();
+    await page.goto(previewUrl);
+  }
+
+  await expect
+    .poll(() => hasEmbeddedFrame(page), { timeout: 120_000 })
+    .toBe(true);
+
   await page.context().storageState({ path: storageStatePath });
 });

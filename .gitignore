@@ -6,6 +6,7 @@ dist-ssr
 *.local
 count.txt
 .env
+.env.playwright
 .nitro
 .tanstack
 .wrangler
@@ -24,5 +25,6 @@ test/browser/__screenshots__/
 .dev.vars*
 !.dev.vars.example
 !.env.example
+!.env.playwright.example
 
 CLAUDE.md
