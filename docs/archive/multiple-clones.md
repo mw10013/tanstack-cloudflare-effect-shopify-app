@@ -52,7 +52,7 @@ This creates symlinks for `refs/` and `todo.md` pointing to the primary repo's v
 | Concern           | File/Setup                    | Port handling                                              |
 | ----------------- | ----------------------------- | ---------------------------------------------------------- |
 | Dev server        | `package.json` dev script     | Sources `.env`, uses `$PORT` for vite dev.                 |
-| Playwright        | `playwright.config.ts`        | Loads `.env`, uses `process.env.PORT` for url/baseURL.     |
+| Playwright        | `playwright/playwright.config.ts` | Embedded admin E2E does not depend on local port.          |
 | Integration tests | `test/integration/`           | Use fixed `http://example.com`, no localhost ports.        |
 | Stripe CLI        | `package.json` stripe scripts | Sources `.env`, uses `$PORT` in webhook URL.               |
 | Wrangler config   | `wrangler.jsonc`              | BETTER_AUTH_URL hardcoded per env; types as string.        |

@@ -17,6 +17,7 @@ refs
 playwright-report/
 test-results/
 .playwright-cli/
+playwright/.auth/
 logs/
 todo.md
 .vitest-attachments/
