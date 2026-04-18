@@ -14,10 +14,8 @@ count.txt
 todos.json
 refs
 *.tsbuildinfo
-playwright-report/
-test-results/
+playwright/
 .playwright-cli/
-playwright/.auth/
 logs/
 todo.md
 .vitest-attachments/

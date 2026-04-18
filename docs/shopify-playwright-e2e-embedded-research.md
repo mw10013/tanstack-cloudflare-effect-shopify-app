@@ -15,7 +15,11 @@ Playwright auth-with-setup pattern reference:
 - Test directory: `e2e/`
 - Setup/auth test: `e2e/shopify-admin.setup.ts`
 - Embedded assertion test: `e2e/embedded-app-home.spec.ts`
-- Auth storage file: `playwright/.auth/shopify-admin.json` (gitignored in `.gitignore`)
+- Shared storage-state path: `e2e/storage-state.ts` (single source of truth)
+- Auth storage file: `playwright/.auth/shopify-admin.json` (gitignored)
+- HTML report output: `playwright/report/` (gitignored)
+- Per-test artifact output (`outputDir`): `playwright/test-results/` (gitignored)
+- `.gitignore` collapses everything Playwright-owned to a single entry: `playwright/`
 
 ## Current test inventory
 
@@ -23,8 +27,10 @@ Playwright auth-with-setup pattern reference:
 - `shopify-admin.setup.ts > shopify admin auth`
 - `embedded-app-home.spec.ts > embedded app home loads`
 
-`pnpm test:e2e` runs only `*.spec.ts` tests.
-`pnpm test:e2e:setup` runs only `*.setup.ts` tests.
+`pnpm test:e2e` runs only `*.spec.ts` tests (positional `.spec.ts` filter).
+`pnpm test:e2e:setup` runs only `*.setup.ts` tests headed.
+
+The positional arg to `playwright test` is a substring/regex match against file paths; combined with `testMatch` in config it cleanly partitions setup vs spec runs without escaped regex.
 
 ## Preview URL
 
@@ -45,8 +51,8 @@ https://admin.shopify.com/store/sandbox-shop-01/apps/9a91c9ff6ba488dafb39a7c6964
 - Log in in the opened browser.
 - Resume the paused test to persist `playwright/.auth/shopify-admin.json`.
 
-3) Run embedded assertion test (headed):
-- `pnpm test:e2e:run`
+3) Run embedded assertion test:
+- `pnpm test:e2e`
 
 ## VS Code Playwright extension notes
 
@@ -65,22 +71,22 @@ Grounded in `refs/playwright/docs/src/`:
 - **`storageState` for auth** — Playwright docs explicitly recommend `playwright/.auth/` and gitignoring it: *"We recommend to create `playwright/.auth` directory and add it to your `.gitignore`"* — `auth.md:13–34`.
 - **`snapshotDir`** — base for `toMatchSnapshot` files. Default: `testDir`. The property itself is **discouraged** in favor of `snapshotPathTemplate` — `test-api/class-testconfig.md:351–374`.
 
-### Current state in this repo (the mess)
+### Previous state (before consolidation)
 
-Top-level dirs created/used by Playwright today:
+Top-level dirs created/used by Playwright historically:
 
 | Dir | Source | Purpose |
 | --- | --- | --- |
 | `e2e/` | `testDir` in config | Test specs + setup |
-| `playwright/.auth/` | manual `path.join(...)` in `e2e/shopify-admin.setup.ts:19–24` and `e2e/embedded-app-home.spec.ts:4–9` | `storageState` JSON (gitignored) |
-| `playwright-report/` | HTML reporter default (`reporter: "html"` in `playwright.config.ts:17`) | Generated HTML report |
+| `playwright/.auth/` | manual `path.join(...)` in setup + spec | `storageState` JSON (gitignored) |
+| `playwright-report/` | HTML reporter default | Generated HTML report |
 | `test-results/` | `outputDir` default | Per-test artifacts (traces/screenshots/videos) |
 | `.playwright-cli/` | external `playwright-cli` tool, **not** `@playwright/test` | Unrelated session storage; ignore |
 
-Grievances confirmed:
-- `playwright/` is a near-empty shell whose only purpose is to host `.auth/`.
-- `playwright-report/` and `test-results/` are sibling top-level dirs with no visual relation.
-- Auth path is hardcoded in two spec files instead of the config.
+Grievances:
+- `playwright/` was a near-empty shell whose only purpose was to host `.auth/`.
+- `playwright-report/` and `test-results/` were sibling top-level dirs with no visual relation.
+- Auth path was hardcoded in two files instead of one source of truth.
 
 ### Options
 
@@ -147,14 +153,30 @@ Cons:
 - `.auth` nesting (`.playwright/.auth`) becomes weird vs flat `.playwright/auth`.
 - Drifts from official docs more than A. Anything you grep for in Playwright docs (`playwright/.auth/...`) won't match your tree.
 
-### Recommendation
+### Decision: Option A (applied)
 
-**Option A.** Trade-off: keep the single Playwright-blessed convention (`playwright/.auth`) and cluster the two generated dirs (`test-results/`, `report/`) inside the same parent so the root stops looking like a junk drawer. Pull the auth path out of the spec files and into `use.storageState` in `playwright.config.ts` so there's one source of truth.
+Trade-off: keep the Playwright-blessed convention (`playwright/.auth`) and cluster the two generated dirs (`test-results/`, `report/`) inside the same parent so the root stops looking like a junk drawer.
 
-### Companion changes
+#### Applied changes
 
-- `.gitignore`: replace the three lines `playwright-report/`, `test-results/`, `playwright/.auth/` with a single `playwright/` (or keep `.auth/` separate if you ever want to commit the report locally — unlikely).
-- Drop `process.cwd() + "playwright/.auth/..."` from `e2e/shopify-admin.setup.ts` and `e2e/embedded-app-home.spec.ts`; read from project config instead.
+- `playwright.config.ts`:
+  - `outputDir: "./playwright/test-results"`
+  - `reporter: [["html", { outputFolder: "./playwright/report" }]]`
+- New `e2e/storage-state.ts` — single export `storageStatePath` pointing at `playwright/.auth/shopify-admin.json`. Imported by both `shopify-admin.setup.ts` and `embedded-app-home.spec.ts` (no more hardcoded paths).
+- `.gitignore` — three lines (`playwright-report/`, `test-results/`, `playwright/.auth/`) collapsed into one: `playwright/`.
+- Removed orphaned top-level `playwright-report/` and `test-results/`.
+
+#### Why `storageState` is not in global `use`
+
+Putting `use.storageState` at the config root would apply to the setup test too, which would try to load a non-existent file on first run before producing it. Without a separate `setup` Playwright project (intentionally avoided to keep config minimal), the spec file declares `test.use({ storageState })` itself. Both files import the path constant from `e2e/storage-state.ts`.
+
+#### Verification
+
+- `pnpm exec playwright test --list` → 2 tests in 2 files (unchanged).
+- `pnpm typecheck` → clean.
+
+#### Notes
+
 - Don't set `snapshotDir` — it's discouraged. Use `snapshotPathTemplate` if/when snapshots are added.
 
 ### Sources

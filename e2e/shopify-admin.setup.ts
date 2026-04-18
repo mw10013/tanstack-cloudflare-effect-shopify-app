@@ -1,6 +1,7 @@
 import { test as setup } from "@playwright/test";
 import * as fs from "fs";
 import path from "path";
+import { storageStatePath } from "./storage-state";
 
 /**
  * Playwright "setup" project used by embedded Shopify Admin E2E.
@@ -16,12 +17,6 @@ import path from "path";
  */
 setup("shopify admin auth", async ({ page }) => {
   setup.setTimeout(10 * 60 * 1000);
-  const storageStatePath = path.join(
-    process.cwd(),
-    "playwright",
-    ".auth",
-    "shopify-admin.json",
-  );
   await fs.promises.mkdir(path.dirname(storageStatePath), { recursive: true });
 
   const shouldReauth = process.env.SHOPIFY_E2E_REAUTH === "1";
