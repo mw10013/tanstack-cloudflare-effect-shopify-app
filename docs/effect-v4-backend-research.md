@@ -302,6 +302,53 @@ Target replacements:
 - `Schema.decodeUnknownEffect` for webhook payloads / stored payload parsing where practical
 - `Schema.TaggedErrorClass` for Shopify/session failures
 
+Recommended cutover shape:
+
+- do this side-by-side, not as a flag day rewrite
+- keep existing imperative exports in `src/lib/Shopify.ts` working during the migration
+- add an Effect service to the same file first, then migrate callers one-by-one
+- only split the file later if it becomes too large
+
+That means `src/lib/Shopify.ts` can temporarily contain both:
+
+- existing imperative exports like `authenticateAdmin`, `shopifyLogin`, `deleteShopifySessionsByShop`
+- new Effect-native exports like `Shopify`, `ShopifyError`, and small internal Effect helpers
+
+This is the lowest-friction path because it:
+
+- preserves current route behavior during migration
+- avoids a large import churn up front
+- keeps Shopify logic discoverable in one place while the new service takes shape
+- lets each route opt into Effect independently
+
+Good transitional direction:
+
+```ts
+export class Shopify extends Context.Service<Shopify>()("Shopify", {
+  make: Effect.gen(function* () {
+    const env = yield* CloudflareEnv
+    const d1 = yield* D1
+    const request = yield* Request
+    const config = yield* Config.all({
+      apiKey: Config.nonEmptyString("SHOPIFY_API_KEY"),
+      apiSecretKey: Config.nonEmptyString("SHOPIFY_API_SECRET"),
+    })
+
+    return {
+      authenticateAdmin: Effect.fn("Shopify.authenticateAdmin")(function* () {
+        return yield* Effect.tryPromise(() => /* shopify sdk call */ null as never)
+      }),
+    }
+  }),
+}) {
+  static readonly layer = Layer.effect(this, this.make)
+}
+```
+
+Not exact code. Recommended shape.
+
+Important detail: the new Effect service should be fully Effect-native, even while it lives beside the imperative implementation. Duplication during the transition is acceptable. Do not share internal parsing/building helpers between the imperative and Effect paths.
+
 ### 2. Convert `/app` auth and product mutation to `runEffect`
 
 Best first migrations:
@@ -314,6 +361,13 @@ Reason:
 - these are the highest-value server-side Shopify paths
 - they currently bypass the runtime already built in `src/worker.ts`
 - `refs/tces` gives a direct route/server-fn pattern to copy
+
+Suggested migration order inside those routes:
+
+1. keep route inputs/outputs identical
+2. swap imperative internals for `runEffect(...)`
+3. call the new `Shopify` service from inside the Effect program
+4. leave the old imperative exports in place until all callers are moved
 
 ### 3. Convert webhook routes next
 
@@ -331,6 +385,11 @@ Good target shape:
 - update/delete session data via `ShopifySessionStore` / `D1`
 - log structured metadata around shop, topic, and result
 
+Side-by-side rule here too:
+
+- migrate one webhook at a time
+- do not delete the imperative helper until no route still imports it
+
 ### 4. Keep the TanStack/Effect control-flow bridge already in `src/worker.ts`
 
 This is good and should stay.
@@ -342,6 +401,109 @@ Why:
 - it matches the same bridge pattern used in `refs/tces`
 
 This means the repo does not need a transport rewrite to become “fully Effect” on the backend.
+
+## Implementation plan
+
+### Phase 1: Add the Effect Shopify service in-place
+
+Goal: introduce an Effect-native API without breaking any current callers.
+
+1. In `src/lib/Shopify.ts`, add `ShopifyError` and `Shopify` `Context.Service` exports.
+2. Read config through `Config`, not `process.env`, inside the new service.
+3. Re-implement app-url parsing, session payload parsing, bounce/exit iframe response creation, and GraphQL response shaping in the Effect path using Effect-native code.
+4. Back session persistence with the existing `D1` service for new Effect methods.
+5. Keep all current imperative exports untouched for now.
+
+Deliverable:
+
+- routes can choose either the old imperative API or the new Effect service
+
+### Phase 2: Wire the service into the worker runtime
+
+Goal: make the new service available anywhere `runEffect` runs.
+
+1. Extend `src/worker.ts` runtime composition with the new `Shopify.layer`.
+2. Keep the existing `runEffect` bridge and TanStack error handling exactly as-is.
+3. Do not change any route behavior yet.
+
+Deliverable:
+
+- `yield* Shopify` works inside server functions and server handlers
+
+### Phase 3: Migrate the `/app` auth route
+
+Goal: cut over the highest-value route guard first.
+
+1. Update `src/routes/app.tsx` to call `runEffect(...)`.
+2. Inside the Effect program, resolve the current request from `Request` and call `yield* Shopify`.
+3. Preserve the existing route contract: same redirect semantics, same returned `apiKey` and `shop` shape.
+4. Keep imperative `authenticateAdmin` exported for all other callers.
+
+Deliverable:
+
+- one real production path uses the Effect service end-to-end
+
+### Phase 4: Migrate the product mutation
+
+Goal: move a non-trivial Shopify Admin flow into Effect.
+
+1. Update `src/routes/app.index.tsx` server fn to use `runEffect(...)`.
+2. Move Shopify auth + GraphQL calls behind Effect service methods.
+3. Replace ad hoc thrown `Error` values with tagged errors or explicit Effect failures where useful.
+4. Preserve the returned JSON shape so the React component does not need to change.
+
+Deliverable:
+
+- a route mutation uses the Effect Shopify service while the UI stays unchanged
+
+### Phase 5: Migrate webhook handlers
+
+Goal: finish the server-only Shopify surfaces.
+
+1. Move webhook validation into the Effect service or adjacent Effect helpers.
+2. Convert `webhooks.app.uninstalled` and `webhooks.app.scopes_update` one at a time.
+3. Route D1 writes through the Effect-backed session store methods.
+4. Add structured logging around topic, shop, and outcome.
+
+Deliverable:
+
+- all Shopify webhook handling runs through Effect
+
+### Phase 6: Remove or shrink the imperative surface
+
+Goal: finish cutover without unnecessary churn.
+
+1. Audit imports of legacy imperative helpers in `src/`.
+2. When no callers remain, delete the old imperative exports.
+3. If `src/lib/Shopify.ts` becomes crowded, split it only after the cutover settles.
+
+Deliverable:
+
+- one canonical Shopify backend path, with minimal dead transition code
+
+## Recommended in-file transition design
+
+If we keep both styles in `src/lib/Shopify.ts`, prefer this direction:
+
+1. keep two parallel implementations in the same file during cutover
+2. new Effect service methods are implemented in fully Effect-native code
+3. old imperative exports remain unchanged until their callers move
+4. avoid shared parsing/building helper layers between the two paths
+5. avoid having the new Effect service call back into old route-level imperative code
+
+This keeps the dependency direction sane:
+
+- imperative implementation in one section
+- Effect implementation in one section
+- exported route-facing APIs at the edge
+
+Not recommended:
+
+- moving everything to a new file immediately
+- rewriting all routes at once
+- mixing request/env acquisition styles within a single migrated call path
+- deleting imperative exports before the last caller moves
+- extracting a shared helper layer just to reduce temporary duplication
 
 ## What “fully Effect on the backend” should mean here
 
