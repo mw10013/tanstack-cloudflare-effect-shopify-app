@@ -26,9 +26,10 @@
 import type {} from "@shopify/polaris-types";
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { Effect, Redacted } from "effect";
 
 import { AppProvider } from "@/components/AppProvider";
-import { authenticateAdmin, getShopifyAppConfig } from "@/lib/Shopify";
+import { Shopify } from "@/lib/Shopify";
 
 declare module "react" {
   // oxlint-disable-next-line typescript-eslint/no-namespace -- canonical JSX augmentation pattern
@@ -46,28 +47,31 @@ const authenticateAppRoute = createServerFn({ method: "GET" })
       readonly pathname: string;
     }) => input,
   )
-  .handler(async ({ data, context }) => {
-    const config = getShopifyAppConfig();
-    const request = new Request(
-      `${config.appUrl}${data.pathname}${data.searchStr}`,
+  .handler(async ({ data, context: { runEffect } }) => {
+    const result = await runEffect(
+      Effect.gen(function* () {
+        const shopify = yield* Shopify;
+        const request = new Request(
+          `${shopify.config.appUrl}${data.pathname}${data.searchStr}`,
+        );
+        const authResult = yield* shopify.authenticateAdmin(request);
+        return authResult instanceof Response
+          ? authResult
+          : {
+              apiKey: Redacted.value(shopify.config.apiKey),
+              shop: authResult.session.shop,
+            } as const;
+      }),
     );
-
-    try {
-      const result = await authenticateAdmin({ request, env: context.env });
-      return {
-        apiKey: config.apiKey,
-        shop: result.session.shop,
-      } as const;
-    } catch (error) {
-      if (error instanceof Response) {
-        const location =
-          error.headers.get("Location") ?? error.headers.get("location");
-        if (location) {
-          return { redirect: location } as const;
-        }
+    if (result instanceof Response) {
+      const location =
+        result.headers.get("Location") ?? result.headers.get("location");
+      if (location) {
+        return { redirect: location } as const;
       }
-      throw error;
+      throw new Error(`Unexpected Shopify auth response: ${result.status}`);
     }
+    return result;
   },
 );
 

@@ -7,11 +7,9 @@ test("generate product creates and renders product JSON", async ({ page }) => {
   const frame = page.frameLocator('iframe[src*="embedded=1"]');
 
   await expect(frame.locator("s-page")).toBeVisible({ timeout: 60_000 });
-  await frame.getByRole("button", { name: "Generate a product" }).first().click();
+  await page.getByRole("button", { name: "Generate a product" }).first().click();
 
-  const mutationSection = frame
-    .locator("s-section")
-    .filter({ hasText: "productCreate mutation" });
+  const mutationSection = frame.locator('s-section[heading="productCreate mutation"]');
   await expect(mutationSection).toBeVisible({ timeout: 30_000 });
   await expect(mutationSection.locator("code").first()).toContainText(
     '"id": "gid://shopify/Product/',

@@ -7,7 +7,7 @@ import { D1 } from "@/lib/D1";
 import { KV } from "@/lib/KV";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import { Request as AppRequest } from "@/lib/Request";
-import { addDocumentResponseHeaders } from "@/lib/Shopify";
+import { addDocumentResponseHeaders, Shopify } from "@/lib/Shopify";
 
 /**
  * Runs an Effect within the full app layer for HTTP request handlers (fetch,
@@ -44,12 +44,13 @@ const makeRunEffect = (env: Env, request: Request) => {
   const envLayer = makeEnvLayer(env);
   const d1Layer = Layer.provideMerge(D1.layer, envLayer);
   const kvLayer = Layer.provideMerge(KV.layer, envLayer);
+  const shopifyLayer = Layer.provideMerge(Shopify.layer, d1Layer);
   const requestLayer = Layer.succeedContext(
     Context.make(AppRequest, request),
   );
   const runtimeLayer = Layer.mergeAll(
-    d1Layer,
     kvLayer,
+    shopifyLayer,
     requestLayer,
     makeLoggerLayer(env),
   );
