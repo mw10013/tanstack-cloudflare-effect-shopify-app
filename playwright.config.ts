@@ -15,7 +15,7 @@ const storageStatePath = path.join(
 );
 
 export default defineConfig({
-  testDir: "./tests",
+  testDir: "./playwright/tests",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
