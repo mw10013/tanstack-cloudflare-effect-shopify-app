@@ -1,186 +1,217 @@
 # Shopify embedded admin Playwright E2E
 
-This repo runs Playwright against Shopify Admin (embedded iframe) and checks that the app home iframe is present and uses embedded params (`embedded=1`, `host=`, `shop=`).
+This doc captures a redesign of auth/bootstrap for embedded Shopify admin E2E so we can run `pnpm test:e2e` directly, without a manual pause/setup test flow.
 
-Shopify admin embed model reference:
-- `refs/shopify-docs/docs/apps/build/admin.md`
+## Current repo behavior (problem statement)
 
-Playwright auth-with-setup pattern reference:
-- `refs/playwright/docs/src/auth.md`
-- `refs/playwright/docs/src/getting-started-vscode-js.md`
+From code today:
 
-## Current repo setup
+- `e2e/shopify-admin.setup.ts` is a manual bootstrap test (`await page.pause()`) that writes auth state.
+- It has reauth toggle logic: `const shouldReauth = process.env.SHOPIFY_E2E_REAUTH === "1"`.
+- It has a hardcoded fallback preview URL.
+- `e2e/embedded-app-home.spec.ts` also has the same hardcoded fallback preview URL.
+- Scripts split setup vs spec:
+  - `pnpm test:e2e:setup` -> `.setup.ts`
+  - `pnpm test:e2e` -> `.spec.ts`
 
-- Config: `playwright.config.ts`
-- Test directory: `e2e/`
-- Setup/auth test: `e2e/shopify-admin.setup.ts`
-- Embedded assertion test: `e2e/embedded-app-home.spec.ts`
-- Shared storage-state path: `e2e/storage-state.ts` (single source of truth)
-- Auth storage file: `playwright/.auth/shopify-admin.json` (gitignored)
-- HTML report output: `playwright/report/` (gitignored)
-- Per-test artifact output (`outputDir`): `playwright/test-results/` (gitignored)
-- `.gitignore` collapses everything Playwright-owned to a single entry: `playwright/`
+This is clunky for day-to-day runs and diverges from requested behavior.
 
-## Current test inventory
+## Requested target behavior
 
-`pnpm exec playwright test --list` currently reports 2 tests in 2 files:
-- `shopify-admin.setup.ts > shopify admin auth`
-- `embedded-app-home.spec.ts > embedded app home loads`
+- No special one-off setup command needed just to save auth.
+- Login should use env credentials (`email/username`, `password`).
+- Tests navigate to `process.env.SHOPIFY_PREVIEW_URL` only (no fallback URL in code).
+- Remove `SHOPIFY_E2E_REAUTH` behavior.
+- If auth expires, user deletes storage file manually.
+- Playwright should support its own env file and committed example env file.
 
-`pnpm test:e2e` runs only `*.spec.ts` tests (positional `.spec.ts` filter).
-`pnpm test:e2e:setup` runs only `*.setup.ts` tests headed.
+## Grounding from Playwright refs
 
-The positional arg to `playwright test` is a substring/regex match against file paths; combined with `testMatch` in config it cleanly partitions setup vs spec runs without escaped regex.
+- Auth state path convention:
+  - `refs/playwright/docs/src/auth.md` recommends `playwright/.auth` + gitignore.
+  - Quote: "We recommend to create `playwright/.auth` directory and add it to your `.gitignore`".
+- State expiry handling:
+  - `refs/playwright/docs/src/auth.md` says to delete stored state when it expires.
+  - Quote: "Note that you need to delete the stored state when it expires."
+- `.env` loading in Playwright config:
+  - `refs/playwright/docs/src/test-parameterize-js.md` shows loading `.env` directly in `playwright.config.ts`.
+  - Quote: "consider something like `.env` files ... read environment variables directly in the configuration file".
+- No-setup-test alternative exists:
+  - `refs/playwright/docs/src/test-global-setup-teardown-js.md` documents `globalSetup`.
+  - Caveat from same doc: project dependencies are recommended overall; `globalSetup` has fewer runner integrations (HTML report visibility, fixtures, trace support).
 
-## Preview URL
+## Design options for this repo
 
-Default preview URL (override with `SHOPIFY_PREVIEW_URL`):
+### Option A: Keep setup test, but automate and wire via project dependencies
 
-```text
-https://admin.shopify.com/store/sandbox-shop-01/apps/9a91c9ff6ba488dafb39a7c696429753?dev-console=show
-```
+What changes:
 
-## Local run flow
-
-1) Start Shopify dev tunnel:
-- `pnpm shopify:dev`
-
-2) Bootstrap/reuse admin auth (headed):
-- `pnpm test:e2e:setup`
-- Force a fresh login: `SHOPIFY_E2E_REAUTH=1 pnpm test:e2e:setup`
-- Log in in the opened browser.
-- Resume the paused test to persist `playwright/.auth/shopify-admin.json`.
-
-3) Run embedded assertion test:
-- `pnpm test:e2e`
-
-## VS Code Playwright extension notes
-
-- There are no Playwright projects in config now.
-- Test Explorer should show both files in `e2e/` directly.
-- If one is missing, use the Playwright sidebar refresh action and reload the VS Code window.
-
-## Folder layout: config, output, reports, auth state
-
-### What Playwright generates and where (defaults)
-
-Grounded in `refs/playwright/docs/src/`:
-
-- **`outputDir`** — per-test artifacts (traces, screenshots, videos, attachments). Default: `<package.json-dir>/test-results`. *"This directory is cleaned at the start. When running a test, a unique subdirectory inside the `outputDir` is created"* — `test-api/class-testconfig.md:318–336`.
-- **HTML reporter `outputFolder`** — the report site. Default: `playwright-report/` in cwd. Overridable via `outputFolder` option or `PLAYWRIGHT_HTML_OUTPUT_DIR` — `test-reporters-js.md:210–250`.
-- **`storageState` for auth** — Playwright docs explicitly recommend `playwright/.auth/` and gitignoring it: *"We recommend to create `playwright/.auth` directory and add it to your `.gitignore`"* — `auth.md:13–34`.
-- **`snapshotDir`** — base for `toMatchSnapshot` files. Default: `testDir`. The property itself is **discouraged** in favor of `snapshotPathTemplate` — `test-api/class-testconfig.md:351–374`.
-
-### Previous state (before consolidation)
-
-Top-level dirs created/used by Playwright historically:
-
-| Dir | Source | Purpose |
-| --- | --- | --- |
-| `e2e/` | `testDir` in config | Test specs + setup |
-| `playwright/.auth/` | manual `path.join(...)` in setup + spec | `storageState` JSON (gitignored) |
-| `playwright-report/` | HTML reporter default | Generated HTML report |
-| `test-results/` | `outputDir` default | Per-test artifacts (traces/screenshots/videos) |
-| `.playwright-cli/` | external `playwright-cli` tool, **not** `@playwright/test` | Unrelated session storage; ignore |
-
-Grievances:
-- `playwright/` was a near-empty shell whose only purpose was to host `.auth/`.
-- `playwright-report/` and `test-results/` were sibling top-level dirs with no visual relation.
-- Auth path was hardcoded in two files instead of one source of truth.
-
-### Options
-
-#### Option A — Consolidate under `playwright/` (recommended)
-
-Make `playwright/` the single home for everything Playwright owns *except* test specs:
-
-```
-e2e/                          # test specs only (testDir)
-playwright/
-  .auth/shopify-admin.json    # storageState (gitignored)
-  test-results/               # outputDir (gitignored)
-  report/                     # html outputFolder (gitignored)
-playwright.config.ts          # stays at root (Playwright auto-discovers)
-```
-
-Config:
-
-```ts
-export default defineConfig({
-  testDir: "./e2e",
-  outputDir: "./playwright/test-results",
-  reporter: [["html", { outputFolder: "./playwright/report" }]],
-  use: { storageState: "./playwright/.auth/shopify-admin.json" },
-});
-```
+- Keep `*.setup.ts` file, remove `pause()`, do credential login automatically.
+- Add Playwright projects + `dependencies: ["setup"]` so normal spec runs trigger setup implicitly.
+- Put `use.storageState` in dependent project config.
 
 Pros:
-- Matches the Playwright-docs convention for `.auth` verbatim — zero friction for anyone reading the official auth guide.
-- One folder to gitignore (`playwright/`), one folder to delete to nuke state.
-- Specs stop hardcoding paths: `storageState` lives in config; setup/spec files read `testInfo.project.use.storageState` or just rely on the project default.
+
+- Most aligned with Playwright's recommended auth model.
+- Full runner support (reporting/traces/fixtures on setup path).
 
 Cons:
-- `playwright/` and `playwright.config.ts` both exist at root — minor visual duplication.
 
-#### Option B — Move everything under `e2e/`
+- Still has a dedicated setup test artifact in the tree.
+- More config moving parts for this small suite.
 
-```
-e2e/
-  .auth/shopify-admin.json
-  .output/                    # outputDir
-  .report/                    # html outputFolder
-  *.spec.ts, *.setup.ts
-```
+### Why Option A is Playwright-recommended (evidence)
 
-Pros: only one Playwright-related top-level dir.
+From Playwright auth guide (`refs/playwright/docs/src/auth.md`):
+
+- Line 40: "This is the **recommended** approach for tests **without server-side state**. Authenticate once in the **setup project**..."
+- Line 79: "Create a new `setup` project ... declare it as a dependency ... This project will always run and authenticate before all the tests."
+
+From Playwright global setup guide (`refs/playwright/docs/src/test-global-setup-teardown-js.md`):
+
+- Line 8: project dependencies are "the recommended approach" because they integrate better with runner features.
+- Line 10 table header: "Project Dependencies (recommended)" vs `globalSetup`.
+- Lines 13-19 table: dependencies keep HTML report visibility, trace support, fixtures, and automatic config option application; `globalSetup` lacks these.
+- Line 149: "Consider using project dependencies ... to get full feature support."
+
+From Playwright projects guide (`refs/playwright/docs/src/test-projects-js.md`):
+
+- Line 158: dependencies enable setup actions while preserving reporter + trace + fixture support.
+- Lines 192-193: dependency project runs first, then dependents run.
+- Lines 221-223: filtering still includes dependencies unless `--no-deps` is passed.
+
+Takeaway: Option A is recommended because it keeps auth bootstrap inside normal test-runner semantics (tests, fixtures, traces, report nodes), instead of outside runner lifecycle.
+
+## Conceptual model: projects vs dependencies
+
+### Project
+
+Per `refs/playwright/docs/src/test-projects-js.md:8`, a project is a logical group of tests with shared config.
+
+Think: one config profile. Example differences per project:
+
+- browser/device
+- retries/timeouts
+- env target
+- auth mode (`storageState`)
+
+### Dependency
+
+Per `refs/playwright/docs/src/test-projects-js.md:156-159`, dependencies are prerequisite projects that must pass before another project runs.
+
+Think: project DAG (directed acyclic graph):
+
+`setup` -> `e2e`
+
+Execution semantics (from `test-projects-js.md:190-197`):
+
+1. run all tests in `setup`
+2. if `setup` passes, run dependent projects
+3. if `setup` fails, dependents are skipped
+
+Filtering semantics (from `test-projects-js.md:219-223`):
+
+- selecting a dependent project still runs its dependencies
+- `--no-deps` disables this behavior
+
+## Mapping this model to this repo
+
+Current repo is not using projects/dependencies:
+
+- `playwright.config.ts:12` has file-level `testMatch` for `*.setup.ts` and `*.spec.ts`.
+- `package.json:11` runs only `.spec.ts` and `package.json:12` runs only `.setup.ts`.
+
+That split is why setup feels "special" today.
+
+Option A removes the "special command" while staying in Playwright's recommended model:
+
+- define a `setup` project (`testMatch: "**/*.setup.ts"`)
+- define test project(s) for specs (`testMatch: "**/*.spec.ts"`, `use.storageState: ...`)
+- add `dependencies: ["setup"]` to spec project(s)
+- run one command: `pnpm exec playwright test --headed`
+
+Conceptually, `shopify-admin.setup.ts` stays, but becomes an internal prerequisite stage of the run graph rather than a manual pre-step command.
+
+### Option B: Replace setup test with `globalSetup` lazy-auth bootstrap
+
+What changes:
+
+- Delete `e2e/shopify-admin.setup.ts`.
+- Add `e2e/global-setup.ts` and set `globalSetup` in `playwright.config.ts`.
+- In global setup: if storage state exists, return; else login using env credentials and save storage state.
+- Set `use.storageState` in config for regular tests.
+
+Pros:
+
+- Meets "no special setup test run" cleanly.
+- Simple execution model: run specs, auth bootstraps if missing.
 
 Cons:
-- `testDir: "./e2e"` walks this folder. `testMatch` already filters to `*.spec.ts`/`*.setup.ts` so generated dirs *won't* be picked up as tests, but it still mixes source and generated artifacts in one tree — annoying in editors and `git status`.
-- Diverges from the Playwright docs' `playwright/.auth` convention.
 
-#### Option C — Hidden `.playwright/` (like `.tanstack`, `.wrangler`)
+- Not Playwright's recommended primary model.
+- Global setup lacks some first-class runner features (per Playwright docs comparison table).
 
-```
-.playwright/
-  auth/shopify-admin.json
-  test-results/
-  report/
-```
+### Option C: Per-spec `beforeAll` (or shared fixture) lazy-auth
 
-Pros: matches the dotfile pattern of other tool-owned dirs in this repo (`.tanstack`, `.wrangler`, `.shopify`).
+What changes:
+
+- Keep no setup project and no global setup.
+- Add auth bootstrap in a shared helper/fixture before tests.
+
+Pros:
+
+- No setup test file.
 
 Cons:
-- `.auth` nesting (`.playwright/.auth`) becomes weird vs flat `.playwright/auth`.
-- Drifts from official docs more than A. Anything you grep for in Playwright docs (`playwright/.auth/...`) won't match your tree.
 
-### Decision: Option A (applied)
+- Easy to duplicate logic.
+- Harder to keep robust/centralized than Option B.
 
-Trade-off: keep the Playwright-blessed convention (`playwright/.auth`) and cluster the two generated dirs (`test-results/`, `report/`) inside the same parent so the root stops looking like a junk drawer.
+## Recommended direction for this repo
 
-#### Applied changes
+Given stated preference (no special setup run/test), Option B is the best fit.
 
-- `playwright.config.ts`:
-  - `outputDir: "./playwright/test-results"`
-  - `reporter: [["html", { outputFolder: "./playwright/report" }]]`
-- New `e2e/storage-state.ts` — single export `storageStatePath` pointing at `playwright/.auth/shopify-admin.json`. Imported by both `shopify-admin.setup.ts` and `embedded-app-home.spec.ts` (no more hardcoded paths).
-- `.gitignore` — three lines (`playwright-report/`, `test-results/`, `playwright/.auth/`) collapsed into one: `playwright/`.
-- Removed orphaned top-level `playwright-report/` and `test-results/`.
+Implementation shape:
 
-#### Why `storageState` is not in global `use`
+1. Env model (Playwright-specific)
+   - Add `.env.playwright` (ignored).
+   - Add `.env.playwright.example` (committed).
+   - Load in `playwright.config.ts` before `defineConfig`.
+2. Required envs (hard-required; fail fast if missing)
+   - `SHOPIFY_PREVIEW_URL`
+   - `SHOPIFY_E2E_LOGIN_EMAIL`
+   - `SHOPIFY_E2E_LOGIN_PASSWORD`
+3. Auth bootstrap
+   - `globalSetup` creates `playwright/.auth` if needed.
+   - If `playwright/.auth/shopify-admin.json` exists, reuse and exit.
+   - Else automate login, then save storage state.
+4. Remove old behavior
+   - Delete fallback preview URL constants.
+   - Remove `SHOPIFY_E2E_REAUTH` code path.
+   - Remove `test:e2e:setup` script.
 
-Putting `use.storageState` at the config root would apply to the setup test too, which would try to load a non-existent file on first run before producing it. Without a separate `setup` Playwright project (intentionally avoided to keep config minimal), the spec file declares `test.use({ storageState })` itself. Both files import the path constant from `e2e/storage-state.ts`.
+## Notes on env-file placement
 
-#### Verification
+Two viable paths:
 
-- `pnpm exec playwright test --list` → 2 tests in 2 files (unchanged).
-- `pnpm typecheck` → clean.
+- Dedicated Playwright env files:
+  - `.env.playwright` + `.env.playwright.example`.
+  - Keeps e2e credentials isolated from app runtime env.
+- Reuse existing root env files:
+  - Add e2e keys to `.env` and `.env.example`.
 
-#### Notes
+Given request "Playwright with its own `.env`", prefer dedicated `.env.playwright*` files.
 
-- Don't set `snapshotDir` — it's discouraged. Use `snapshotPathTemplate` if/when snapshots are added.
+## Open questions before implementation
 
-### Sources
+- Does the Shopify test account require 2FA/challenge flows that block pure email+password automation?
+- Are we OK with `globalSetup` trade-off (less setup visibility in HTML report) in exchange for no special setup test?
 
-- [Playwright `outputDir` and `snapshotDir`](https://playwright.dev/docs/api/class-testconfig#test-config-output-dir)
-- [Playwright HTML reporter `outputFolder`](https://playwright.dev/docs/test-reporters#html-reporter)
-- [Playwright auth: `playwright/.auth` convention](https://playwright.dev/docs/auth)
+## Sources
+
+- `refs/playwright/docs/src/auth.md`
+- `refs/playwright/docs/src/test-parameterize-js.md`
+- `refs/playwright/docs/src/test-global-setup-teardown-js.md`
+- `playwright.config.ts`
+- `e2e/shopify-admin.setup.ts`
+- `e2e/embedded-app-home.spec.ts`
