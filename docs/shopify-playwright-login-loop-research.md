@@ -2,156 +2,79 @@
 
 ## Scope
 
-This doc captures the current failure mode where Shopify auth in `e2e/shopify-admin.setup.ts` loops on email lookup and never reaches embedded app state, even with email/password automation.
+Captures what we learned about Shopify auth inside Playwright's Chromium, why in-Playwright login is unreliable in this environment, and the workaround this repo now ships.
 
-## Current failure signal
+## Problem
 
-Repro command:
+Running `e2e/shopify-admin.setup.ts` without an existing `playwright/.auth/shopify-admin.json` gets stuck in an email-lookup/captcha loop:
 
-```bash
-CI=1 pnpm exec playwright test e2e/shopify-admin.setup.ts --project=setup --headed
-```
+- Repro: `CI=1 pnpm exec playwright test e2e/shopify-admin.setup.ts --project=setup --headed`.
+- Page stays on `Continue to Shopify` lookup. Submitting email navigates briefly to `newassets.hcaptcha.com/.../hcaptcha.html#frame=challenge...`, then returns to `accounts.shopify.com/lookup?...verify=<fresh-token>`.
+- Sometimes the page shows: `Captcha couldn't load. Refresh the page and try again.`
+- Happens regardless of whether Playwright drives the inputs or the developer clicks manually inside the Playwright-launched Chromium.
 
-Observed result:
+Opening the same preview URL in the developer's normal Chrome works fine — no captcha, no loop.
 
-- Test fails at `e2e/shopify-admin.setup.ts:175` waiting for embedded frame.
-- Error: `Timeout 120000ms exceeded while waiting on the predicate`.
-- Retries fail the same way.
+## What that tells us
 
-## Evidence collected
+Shopify's risk scoring fires at **login submit**, not on authed sessions. Playwright-launched Chromium is flagged at that moment (automation flags / `navigator.webdriver` / fingerprint), so the lookup form keeps returning a fresh verify token without advancing. Manual clicks inside that browser don't help because the context itself is flagged.
 
-### 1) Page remains on Shopify login lookup
+Post-login pages do **not** trigger the same challenge. Loading `admin.shopify.com/store/.../apps/<app>` with valid Shopify session cookies in the same Playwright Chromium renders the embedded app normally.
 
-From failure snapshots:
+Concrete evidence: a `shopify-admin.json` saved months ago from a prior working session still bootstraps Playwright tests today. `_shopify_s` cookies have long TTLs (current file: valid through ~July 2026). Loading that file short-circuits login entirely and the tests pass.
 
-- `playwright/test-results/shopify-admin.setup.ts-shopify-admin-auth-setup/error-context.md`
-- `playwright/test-results/shopify-admin.setup.ts-shopify-admin-auth-setup-retry1/error-context.md`
-- `playwright/test-results/shopify-admin.setup.ts-shopify-admin-auth-setup-retry2/error-context.md`
+## Grounding
 
-All three snapshots show the same page shape:
+- `refs/playwright/docs/src/best-practices-js.md:44-47` — "Avoid testing third-party dependencies / Only test what you control." Shopify auth + hCaptcha is third-party and risk-scored.
+- `refs/playwright/docs/src/auth.md:40` — `storageState` reuse is the recommended model for tests without server-side state.
+- `refs/playwright/docs/src/auth.md:127-129` — storage state needs occasional manual refresh; expiry is a normal operational concern.
 
-- Heading: `Log in` / `Continue to Shopify`
-- Email textbox present
-- Button: `Continue with email`
-- No transition to embedded app frame
+## Current implementation
 
-### 2) Playwright API debug run shows captcha-gated submit behavior
+`e2e/shopify-admin.setup.ts` now does the minimum:
 
-Repro command:
+1. If `playwright/.auth/shopify-admin.json` exists, return immediately (cookies reused by the `e2e` project via `use.storageState`).
+2. If CI and no file exists, throw with an explicit message — CI cannot bootstrap this.
+3. Otherwise navigate to `SHOPIFY_PREVIEW_URL`, `page.pause()`, save storage state on resume.
 
-```bash
-DEBUG=pw:api pnpm exec playwright test e2e/shopify-admin.setup.ts --project=setup --headed
-```
+`playwright.config.ts` wires `setup` as a dependency of `e2e`; the `e2e` project points `use.storageState` at the same path (`e2e/storage-state.ts`).
 
-Key excerpts from run output:
+The test does **not** try to automate email/password entry. Attempts to do so looped on captcha. The pause path is kept only as a last resort and is known-brittle in this environment (see next section).
 
-```text
-locator resolved to <button ... disabled="disabled" ... class="... login-button ...">
-element is not enabled
-...
-navigated to "https://newassets.hcaptcha.com/.../hcaptcha.html#frame=challenge..."
-...
-navigated to "https://accounts.shopify.com/lookup?...verify=..."
-```
+## Operational playbook
 
-Interpretation:
+### Happy path
 
-- Submit button state is controlled by invisible hCaptcha/risk checks.
-- Submission can occur, but server often returns to lookup route with a fresh verify token.
+`pnpm test:e2e` — setup sees the file, returns; spec runs.
 
-### 3) Raw page HTML captured during loop includes captcha failure banner in some runs
+### Storage state expired or missing
 
-Observed HTML includes:
+The `page.pause()` fallback in setup is unreliable here: in-Playwright login submits keep looping on captcha even when a human clicks the button. Do not rely on it. Use this instead:
 
-```html
-<p>Captcha couldn't load. Refresh the page and try again.</p>
-<button class="ui-button" id="refresh-page-trigger">Refresh</button>
-```
+1. In your normal Chrome (not Playwright), confirm you are logged in at `https://admin.shopify.com/store/sandbox-shop-01/apps/<app-id>`.
+2. Using a cookie export extension (e.g. "Cookie-Editor"), export cookies for `.shopify.com` / `admin.shopify.com` as JSON.
+3. Write `playwright/.auth/shopify-admin.json` with the Playwright storage-state shape:
+   ```json
+   { "cookies": [ /* exported array */ ], "origins": [] }
+   ```
+   Field conversions that may be needed: `expirationDate` → `expires`, `hostOnly`/`session` dropped, `sameSite` values normalized to `Strict`/`Lax`/`None`.
+4. Run `pnpm test:e2e`.
 
-This confirms captcha availability is a hard dependency of the login transition.
+### When to re-bootstrap
 
-## Why automation is brittle here
+Only when the spec starts failing with auth errors, or cookies visibly expire. `_shopify_s` typically has multi-month TTL, so this is rare.
 
-Grounded by Playwright docs + current flow:
+## Rejected alternatives (for future reference)
 
-- `refs/playwright/docs/src/best-practices-js.md:44-47`:
-  - "Avoid testing third-party dependencies"
-  - "Only test what you control"
-- Shopify auth + hCaptcha is third-party/risk-scored and outside this repo's control.
-- `refs/playwright/docs/src/auth.md:127-129` explicitly expects manual auth refresh from time to time in setup flows.
-
-So the weakness is not only selector quality. The auth system can reject/loop even when selectors and clicks are valid.
-
-## Code context (current setup)
-
-- `playwright.config.ts` uses projects + dependencies (`setup` -> `e2e`).
-- `e2e/shopify-admin.setup.ts` currently attempts:
-  - email submit,
-  - optional captcha refresh button click,
-  - password submit,
-  - revisit preview URL,
-  - wait for embedded iframe (`embedded=1`, `host=`, `shop=`).
-- Even with these guards, auth loop persists in this environment.
-
-## Options
-
-### Option 1: Keep full auto-login (current direction)
-
-Pros:
-
-- No manual interaction when it works.
-
-Cons:
-
-- Flaky/blocked by captcha risk scoring.
-- Fails nondeterministically across machines/networks.
-
-### Option 2: Hybrid bootstrap (recommended)
-
-Behavior:
-
-- First run without storage state: open login + pause for manual completion.
-- After user reaches app/admin state, save `storageState`.
-- Subsequent runs are fully automated via stored state.
-- If state expires, delete `playwright/.auth/shopify-admin.json` and repeat once.
-
-Pros:
-
-- Reliable with Shopify captcha/challenge variations.
-- Still no separate special command; remains inside normal `pnpm test:e2e` flow.
-
-Cons:
-
-- First-run/manual refresh is required.
-
-### Option 3: Externalize auth bootstrap outside Playwright test runner
-
-Examples: custom script, manual browser profile capture, or non-Playwright login tooling.
-
-Pros:
-
-- Can decouple from per-test retries/timeout semantics.
-
-Cons:
-
-- Adds maintenance surface and custom tooling.
-
-## Recommendation
-
-Adopt Option 2 as the default policy for this repo:
-
-- Keep project dependencies (`setup` before `e2e`).
-- Treat Shopify auth as challenge-prone and support manual completion fallback during setup.
-- Keep explicit failure message for lookup-loop/captcha-loop states.
-
-This aligns with Playwright guidance for auth-state reuse while acknowledging third-party auth constraints.
+- **Automated email/password entry in Playwright.** Loops on captcha. Not viable here.
+- **Manual login via `page.pause()` in Playwright's Chromium.** Same loop; the browser context itself is flagged, not the click source.
+- **`connectOverCDP` to a user-launched Chrome.** Would bypass the flag but adds a persistent Chrome process + port + user-data-dir to the workflow. Not worth the complexity given that saved storage state lasts months.
+- **`launchPersistentContext` with a dedicated profile.** Still Playwright-launched, so the automation flag is still set at launch; not expected to change risk scoring meaningfully.
 
 ## Source references
 
 - `e2e/shopify-admin.setup.ts`
+- `e2e/storage-state.ts`
 - `playwright.config.ts`
-- `playwright/test-results/shopify-admin.setup.ts-shopify-admin-auth-setup/error-context.md`
-- `playwright/test-results/shopify-admin.setup.ts-shopify-admin-auth-setup-retry1/error-context.md`
-- `playwright/test-results/shopify-admin.setup.ts-shopify-admin-auth-setup-retry2/error-context.md`
-- `refs/playwright/docs/src/best-practices-js.md`
 - `refs/playwright/docs/src/auth.md`
+- `refs/playwright/docs/src/best-practices-js.md`
