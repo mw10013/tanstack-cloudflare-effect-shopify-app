@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Effect } from "effect";
 
-import { shopifyLogin } from "@/lib/Shopify";
+import { Request as AppRequest } from "@/lib/Request";
+import { Shopify } from "@/lib/Shopify";
 
 const renderLoginPage = (error?: string) => `<!doctype html>
 <html lang="en">
@@ -32,20 +34,38 @@ const renderLoginPage = (error?: string) => `<!doctype html>
 export const Route = createFileRoute("/auth/login")({
   server: {
     handlers: {
-      GET: async ({ request }) => {
-        const errors = await shopifyLogin(request);
-        const error = errors.shop === "invalid" ? "Invalid shop domain" : undefined;
-        return new Response(renderLoginPage(error), {
-          headers: { "content-type": "text/html; charset=utf-8" },
-        });
-      },
-      POST: async ({ request }) => {
-        const errors = await shopifyLogin(request);
-        const error = errors.shop === "invalid" ? "Invalid shop domain" : undefined;
-        return new Response(renderLoginPage(error), {
-          headers: { "content-type": "text/html; charset=utf-8" },
-        });
-      },
+      GET: ({ context: { runEffect } }) =>
+        runEffect(
+          Effect.gen(function* () {
+            const request = yield* AppRequest;
+            const shopify = yield* Shopify;
+            const result = yield* shopify.login(request);
+            if (result instanceof Response) {
+              return result;
+            }
+            const error =
+              result.shop === "invalid" ? "Invalid shop domain" : undefined;
+            return new Response(renderLoginPage(error), {
+              headers: { "content-type": "text/html; charset=utf-8" },
+            });
+          }),
+        ),
+      POST: ({ context: { runEffect } }) =>
+        runEffect(
+          Effect.gen(function* () {
+            const request = yield* AppRequest;
+            const shopify = yield* Shopify;
+            const result = yield* shopify.login(request);
+            if (result instanceof Response) {
+              return result;
+            }
+            const error =
+              result.shop === "invalid" ? "Invalid shop domain" : undefined;
+            return new Response(renderLoginPage(error), {
+              headers: { "content-type": "text/html; charset=utf-8" },
+            });
+          }),
+        ),
     },
   },
 });

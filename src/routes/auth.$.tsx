@@ -1,21 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Effect } from "effect";
 
-import { authenticateAdmin } from "@/lib/Shopify";
+import { Request as AppRequest } from "@/lib/Request";
+import { Shopify } from "@/lib/Shopify";
 
 export const Route = createFileRoute("/auth/$")({
   server: {
     handlers: {
-      GET: async ({ request, context }) => {
-        try {
-          await authenticateAdmin({ request, env: context.env });
-          return new Response(null, { status: 200 });
-        } catch (error) {
-          if (error instanceof Response) {
-            return error;
-          }
-          throw error;
-        }
-      },
+      GET: ({ context: { runEffect } }) =>
+        runEffect(
+          Effect.gen(function* () {
+            const request = yield* AppRequest;
+            const shopify = yield* Shopify;
+            const result = yield* shopify.authenticateAdmin(request);
+            return result instanceof Response
+              ? result
+              : new Response(null, { status: 200 });
+          }),
+        ),
     },
   },
 });
