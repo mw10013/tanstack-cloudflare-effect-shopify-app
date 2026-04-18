@@ -7,7 +7,7 @@ import { D1 } from "@/lib/D1";
 import { KV } from "@/lib/KV";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import { Request as AppRequest } from "@/lib/Request";
-import { addDocumentResponseHeaders, Shopify } from "@/lib/Shopify";
+import { Shopify } from "@/lib/Shopify";
 
 /**
  * Runs an Effect within the full app layer for HTTP request handlers (fetch,
@@ -127,7 +127,12 @@ export default {
       return response;
     }
     const headers = new Headers(response.headers);
-    addDocumentResponseHeaders(request, headers);
+    await runEffect(
+      Effect.gen(function* () {
+        const shopify = yield* Shopify;
+        yield* shopify.addDocumentResponseHeaders(request, headers);
+      }),
+    );
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
