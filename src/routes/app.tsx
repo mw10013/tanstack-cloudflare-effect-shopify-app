@@ -28,6 +28,7 @@ import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-
 import { createServerFn } from "@tanstack/react-start";
 import { Effect, Redacted } from "effect";
 
+import { Request as AppRequest } from "@/lib/Request";
 import { AppProvider } from "@/components/AppProvider";
 import { Shopify } from "@/lib/Shopify";
 
@@ -51,10 +52,15 @@ const authenticateAppRoute = createServerFn({ method: "GET" })
     const result = await runEffect(
       Effect.gen(function* () {
         const shopify = yield* Shopify;
-        const request = new Request(
+        const request = yield* AppRequest;
+        const appRequest = new Request(
           `${shopify.config.appUrl}${data.pathname}${data.searchStr}`,
+          {
+            method: request.method,
+            headers: request.headers,
+          },
         );
-        const authResult = yield* shopify.authenticateAdmin(request);
+        const authResult = yield* shopify.authenticateAdmin(appRequest);
         return authResult instanceof Response
           ? authResult
           : {
@@ -69,7 +75,9 @@ const authenticateAppRoute = createServerFn({ method: "GET" })
       if (location) {
         return { redirect: location } as const;
       }
-      throw new Error(`Unexpected Shopify auth response: ${result.status}`);
+      throw new Error(
+        `Unexpected Shopify auth response: ${String(result.status)}`,
+      );
     }
     return result;
   },

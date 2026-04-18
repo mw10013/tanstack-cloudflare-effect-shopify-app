@@ -44,11 +44,15 @@ const makeRunEffect = (env: Env, request: Request) => {
   const envLayer = makeEnvLayer(env);
   const d1Layer = Layer.provideMerge(D1.layer, envLayer);
   const kvLayer = Layer.provideMerge(KV.layer, envLayer);
-  const shopifyLayer = Layer.provideMerge(Shopify.layer, d1Layer);
   const requestLayer = Layer.succeedContext(
     Context.make(AppRequest, request),
   );
+  const shopifyLayer = Layer.provideMerge(
+    Shopify.layer,
+    Layer.merge(d1Layer, requestLayer),
+  );
   const runtimeLayer = Layer.mergeAll(
+    d1Layer,
     kvLayer,
     shopifyLayer,
     requestLayer,

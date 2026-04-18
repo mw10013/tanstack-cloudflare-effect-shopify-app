@@ -2,8 +2,10 @@ import * as React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { Effect } from "effect";
 
-import { authenticateAdmin } from "@/lib/Shopify";
+import { Request as AppRequest } from "@/lib/Request";
+import { Shopify } from "@/lib/Shopify";
 
 interface GeneratedVariant {
   readonly id: string;
@@ -35,94 +37,119 @@ interface GenerateProductResult {
 }
 
 const generateProduct = createServerFn({ method: "POST" }).handler(
-  async ({ context }): Promise<GenerateProductResult> => {
-    const { admin } = await authenticateAdmin({
-      request: context.request,
-      env: context.env,
-    });
-    const color = ["Red", "Orange", "Yellow", "Green"][Math.floor(Math.random() * 4)];
-
-    const productCreateResponse = await admin.graphql(
-      `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
+  ({ context: { runEffect } }): Promise<GenerateProductResult> =>
+    runEffect(
+      Effect.gen(function* () {
+        const shopify = yield* Shopify;
+        const request = yield* AppRequest;
+        const auth = yield* shopify.authenticateAdmin(request);
+        if (auth instanceof Response) {
+          return yield* Effect.fail(
+            new Error(`Unexpected Shopify auth response: ${String(auth.status)}`),
+          );
+        }
+        const color = ["Red", "Orange", "Yellow", "Green"][Math.floor(Math.random() * 4)];
+        const productCreateResponse = yield* auth.graphql(
+          `#graphql
+          mutation populateProduct($product: ProductCreateInput!) {
+            productCreate(product: $product) {
+              product {
+                id
+                title
+                handle
+                status
+                variants(first: 10) {
+                  edges {
+                    node {
+                      id
+                      price
+                      barcode
+                      createdAt
+                    }
+                  }
                 }
               }
             }
-          }
-        }
-      }`,
-      {
-        variables: {
-          product: {
-            title: `${color} Snowboard`,
+          }`,
+          {
+            variables: {
+              product: {
+                title: `${color} Snowboard`,
+              },
+            },
           },
-        },
-      },
-    );
-
-    const productCreateJson: ShopifyGraphqlResponse<{
-      readonly productCreate?: {
-        readonly product?: GeneratedProduct;
-      };
-    }> = await productCreateResponse.json();
-    const product = productCreateJson.data?.productCreate?.product;
-    if (!product) {
-      throw new Error(productCreateJson.errors?.[0]?.message ?? "Product create failed");
-    }
-
-    const variantId = product.variants.edges[0]?.node.id;
-    if (!variantId) {
-      throw new Error("Created product has no variant");
-    }
-
-    const productVariantsBulkUpdateResponse = await admin.graphql(
-      `#graphql
-      mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-        productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-          productVariants {
-            id
-            price
-            barcode
-            createdAt
-          }
+        );
+        const productCreateJson = yield* Effect.tryPromise(
+          () => productCreateResponse.json(),
+        ).pipe(
+          Effect.map(
+            (json) =>
+              json as ShopifyGraphqlResponse<{
+                readonly productCreate?: {
+                  readonly product?: GeneratedProduct;
+                };
+              }>,
+          ),
+        );
+        const product = productCreateJson.data?.productCreate?.product;
+        if (!product) {
+          return yield* Effect.fail(
+            new Error(productCreateJson.errors?.[0]?.message ?? "Product create failed"),
+          );
         }
-      }`,
-      {
-        variables: {
-          productId: product.id,
-          variants: [{ id: variantId, price: "100.00" }],
-        },
-      },
-    );
 
-    const productVariantsBulkUpdateJson: ShopifyGraphqlResponse<{
-      readonly productVariantsBulkUpdate?: {
-        readonly productVariants?: readonly GeneratedVariant[];
-      };
-    }> = await productVariantsBulkUpdateResponse.json();
+        const variantId = product.variants.edges[0]?.node.id;
+        if (!variantId) {
+          return yield* Effect.fail(new Error("Created product has no variant"));
+        }
 
-    const variant = productVariantsBulkUpdateJson.data?.productVariantsBulkUpdate?.productVariants;
-    if (!variant) {
-      throw new Error(
-        productVariantsBulkUpdateJson.errors?.[0]?.message ?? "Product variant update failed",
-      );
-    }
+        const productVariantsBulkUpdateResponse = yield* auth.graphql(
+          `#graphql
+          mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+              productVariants {
+                id
+                price
+                barcode
+                createdAt
+              }
+            }
+          }`,
+          {
+            variables: {
+              productId: product.id,
+              variants: [{ id: variantId, price: "100.00" }],
+            },
+          },
+        );
+        const productVariantsBulkUpdateJson = yield* Effect.tryPromise(
+          () => productVariantsBulkUpdateResponse.json(),
+        ).pipe(
+          Effect.map(
+            (json) =>
+              json as ShopifyGraphqlResponse<{
+                readonly productVariantsBulkUpdate?: {
+                  readonly productVariants?: readonly GeneratedVariant[];
+                };
+              }>,
+          ),
+        );
 
-    return { product, variant };
-  },
+        const variant =
+          productVariantsBulkUpdateJson.data?.productVariantsBulkUpdate
+            ?.productVariants;
+        if (!variant) {
+          return yield* Effect.fail(
+            new Error(
+              productVariantsBulkUpdateJson.errors?.[0]?.message ??
+                "Product variant update failed",
+            ),
+          );
+        }
+
+        return { product, variant };
+      }),
+    ),
 );
 
 export const Route = createFileRoute("/app/")({
