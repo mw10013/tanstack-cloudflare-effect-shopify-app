@@ -297,7 +297,7 @@ on conflict(id) do update set
      */
     const validateWebhook = Effect.fn("Shopify.validateWebhook")(
       function* (request: Request) {
-        const rawBody = yield* Effect.tryPromise(() => request.text());
+        const rawBody = yield* tryShopifyPromise(() => request.text());
         const result = yield* tryShopifyPromise(() =>
           shopify.webhooks.validate({
             rawBody,
