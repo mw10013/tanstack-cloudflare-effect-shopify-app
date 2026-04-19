@@ -6,7 +6,7 @@ import { D1 } from "@/lib/D1";
 
 type SessionEntry = [string, string | number | boolean];
 
-interface EffectShopifyConfig {
+interface ShopifyConfig {
   readonly apiKey: Redacted.Redacted;
   readonly apiSecretKey: Redacted.Redacted;
   readonly appUrl: string;
@@ -38,7 +38,7 @@ const POLARIS_URL = "https://cdn.shopify.com/shopifycloud/polaris.js";
 const CDN_URL = "https://cdn.shopify.com";
 const WITHIN_MILLISECONDS_OF_EXPIRY = 5 * 60 * 1000;
 
-const effectShopifyConfig = Config.all({
+const shopifyConfig = Config.all({
   apiKey: Config.nonEmptyString("SHOPIFY_API_KEY").pipe(
     Config.map(Redacted.make),
   ),
@@ -69,12 +69,12 @@ const effectShopifyConfig = Config.all({
   ),
 });
 
-const effectShopifyApi = ({
+const createShopifyApi = ({
   apiKey,
   apiSecretKey,
   appUrl,
   scopes,
-}: EffectShopifyConfig) => {
+}: ShopifyConfig) => {
   const appUrlObject = new URL(appUrl);
   return ShopifyApi.shopifyApi({
     apiKey: Redacted.value(apiKey),
@@ -107,7 +107,7 @@ const tryShopifyPromise = <A>(evaluate: () => Promise<A>) =>
       }),
   });
 
-const decodeEffectSessionPayload = Effect.fn("Shopify.decodeSessionPayload")(
+const decodeSessionPayload = Effect.fn("Shopify.decodeSessionPayload")(
   function* (payload: string) {
     const parsed = yield* tryShopify(() => JSON.parse(payload) as unknown);
     if (!Array.isArray(parsed)) {
@@ -135,7 +135,7 @@ const setShopifyDocumentHeaders = (headers: Headers, shop: string) => {
   );
 };
 
-const buildEffectDocumentResponseHeaders = (shop: string | null) => {
+const buildDocumentResponseHeaders = (shop: string | null) => {
   const headers = new Headers({ "content-type": "text/html;charset=utf-8" });
   if (shop) {
     setShopifyDocumentHeaders(headers, shop);
@@ -143,13 +143,13 @@ const buildEffectDocumentResponseHeaders = (shop: string | null) => {
   return headers;
 };
 
-const renderEffectBouncePage = (apiKey: string, shop: string | null): Response =>
+const renderBouncePage = (apiKey: string, shop: string | null): Response =>
   new Response(
     `<script data-api-key="${apiKey}" src="${APP_BRIDGE_URL}"></script>`,
-    { headers: buildEffectDocumentResponseHeaders(shop) },
+    { headers: buildDocumentResponseHeaders(shop) },
   );
 
-const renderEffectExitIframePage = (
+const renderExitIframePage = (
   apiKey: string,
   shop: string | null,
   destination: string,
@@ -157,11 +157,11 @@ const renderEffectExitIframePage = (
   new Response(
     `<script data-api-key="${apiKey}" src="${APP_BRIDGE_URL}"></script>
 <script>window.open(${JSON.stringify(destination)}, "_top")</script>`,
-    { headers: buildEffectDocumentResponseHeaders(shop) },
+    { headers: buildDocumentResponseHeaders(shop) },
   );
 
-const buildEffectAdminContext = (
-  shopify: ReturnType<typeof effectShopifyApi>,
+const buildAdminContext = (
+  shopify: ReturnType<typeof createShopifyApi>,
   session: ShopifyApi.Session,
 ): ShopifyAdminContext => ({
   session,
@@ -179,8 +179,8 @@ const buildEffectAdminContext = (
 export class Shopify extends Context.Service<Shopify>()("Shopify", {
   make: Effect.gen(function* () {
     const d1 = yield* D1;
-    const config = yield* effectShopifyConfig;
-    const shopify = effectShopifyApi(config);
+    const config = yield* shopifyConfig;
+    const shopify = createShopifyApi(config);
     const storeSession = Effect.fn("Shopify.storeSession")(function* (
       session: ShopifyApi.Session,
     ) {
@@ -210,7 +210,7 @@ on conflict(id) do update set
       if (Option.isNone(row)) {
         return Option.none();
       }
-      return yield* decodeEffectSessionPayload(row.value.payload).pipe(
+      return yield* decodeSessionPayload(row.value.payload).pipe(
         Effect.map(Option.some),
         Effect.catchTag("ShopifyError", () => Effect.succeed(Option.none())),
       );
@@ -230,7 +230,7 @@ on conflict(id) do update set
         if (Option.isNone(row)) {
           return;
         }
-        const sessionOption = yield* decodeEffectSessionPayload(
+        const sessionOption = yield* decodeSessionPayload(
           row.value.payload,
         ).pipe(
           Effect.map(Option.some),
@@ -308,11 +308,11 @@ on conflict(id) do update set
         const host = hostParam ? shopify.utils.sanitizeHost(hostParam) : null;
 
         if (url.pathname.endsWith("/auth/session-token")) {
-          return renderEffectBouncePage(Redacted.value(config.apiKey), shop);
+          return renderBouncePage(Redacted.value(config.apiKey), shop);
         }
 
         if (url.pathname.endsWith("/auth/exit-iframe")) {
-          return renderEffectExitIframePage(
+          return renderExitIframePage(
             Redacted.value(config.apiKey),
             shop,
             url.searchParams.get("exitIframe") ?? config.appUrl,
@@ -369,7 +369,7 @@ on conflict(id) do update set
           Option.isSome(existingSession) &&
           existingSession.value.isActive(undefined, WITHIN_MILLISECONDS_OF_EXPIRY)
         ) {
-          return buildEffectAdminContext(shopify, existingSession.value);
+          return buildAdminContext(shopify, existingSession.value);
         }
 
         const { session } = yield* tryShopifyPromise(() =>
@@ -380,7 +380,7 @@ on conflict(id) do update set
           }),
         );
         yield* storeSession(session);
-        return buildEffectAdminContext(shopify, session);
+        return buildAdminContext(shopify, session);
       },
     );
     const login = Effect.fn("Shopify.login")(function* (request: Request) {
