@@ -114,29 +114,33 @@ declare module "@tanstack/react-start" {
 }
 
 export default {
-  async fetch(request, env, _ctx) {
+  fetch(request, env, _ctx) {
     const runEffect = makeRunEffect(env, request);
-    const response = await serverEntry.fetch(request, {
-      context: {
-        env,
-        request,
-        runEffect,
-      },
-    });
-    if (!response.headers.get("content-type")?.startsWith("text/html")) {
-      return response;
-    }
-    const headers = new Headers(response.headers);
-    await runEffect(
+    return runEffect(
       Effect.gen(function* () {
+        const response = yield* Effect.tryPromise({
+          try: async () =>
+            serverEntry.fetch(request, {
+              context: {
+                env,
+                request,
+                runEffect,
+              },
+            }),
+          catch: (cause) => cause,
+        });
+        if (!response.headers.get("content-type")?.startsWith("text/html")) {
+          return response;
+        }
+        const headers = new Headers(response.headers);
         const shopify = yield* Shopify;
         yield* shopify.addDocumentResponseHeaders(request, headers);
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
       }),
     );
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
   },
 } satisfies ExportedHandler<Env>;
