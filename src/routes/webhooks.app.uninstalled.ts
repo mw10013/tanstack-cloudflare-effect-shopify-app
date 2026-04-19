@@ -33,7 +33,7 @@ export const Route = createFileRoute("/webhooks/app/uninstalled")({
                 : new Response("Bad Request", { status: 400 });
             }
             yield* shopify.deleteSessionsByShop(result.domain);
-            return new Response(null, { status: 200 });
+            return new Response();
           }),
         ),
     },
