@@ -35,18 +35,23 @@ Without the webhook handler keeping `scope` current, `isScopeIncluded()` compare
 
 ### Payload
 
-The webhook delivers a JSON body with a `current` array of scope strings (the newly active scopes):
+The webhook delivers a JSON body with a `current` array of scope strings (the newly active scopes). The payload is validated with Effect Schema:
 
 ```ts
-const payload = JSON.parse(result.rawBody) as {
-  readonly current?: readonly string[];
-};
-if (!Array.isArray(payload.current)) {
-  return new Response(null, { status: 200 });
-}
+const ScopesUpdatePayload = Schema.Struct({
+  current: Schema.Array(Schema.String),
+});
+
+const payload = yield* Schema.decodeUnknownEffect(ScopesUpdatePayload)(
+  JSON.parse(result.rawBody),
+);
 ```
 
-The guard on `!Array.isArray(payload.current)` is defensive — a malformed payload is treated as a no-op (200 OK) rather than an error.
+`current` is required (not optional). The webhook fires specifically because scopes changed, so `current` — the new set of granted scopes — is always present (empty array if all revoked, never absent). This aligns with the template, which also treats it as required (`payload.current as string[]`, no optional guard).
+
+`Schema.Struct` is loose by default — extra fields in the webhook body pass through without error.
+
+A malformed payload (missing or wrong-typed `current`) fails the effect with `SchemaError`. This propagates through `makeRunEffect` (`src/worker.ts:61`), which is generic over `E` and handles all errors via `Cause.squash` — result is a thrown exception and a 500 response. Shopify retries on non-2xx, so this is the correct failure mode. `Effect.orDie` is not needed since `makeRunEffect` accepts any error type in the E channel.
 
 ### `offlineSessionId` (`src/lib/Shopify.ts:431`)
 

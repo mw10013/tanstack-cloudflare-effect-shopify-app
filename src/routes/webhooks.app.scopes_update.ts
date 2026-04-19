@@ -1,8 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { Request as AppRequest } from "@/lib/Request";
 import { Shopify } from "@/lib/Shopify";
+
+const ScopesUpdatePayload = Schema.Struct({
+  current: Schema.Array(Schema.String),
+});
 
 export const Route = createFileRoute("/webhooks/app/scopes_update")({
   server: {
@@ -16,12 +20,9 @@ export const Route = createFileRoute("/webhooks/app/scopes_update")({
             if (!result.valid) {
               return new Response("Invalid webhook", { status: 401 });
             }
-            const payload = JSON.parse(result.rawBody) as {
-              readonly current?: readonly string[];
-            };
-            if (!Array.isArray(payload.current)) {
-              return new Response();
-            }
+            const payload = yield* Schema.decodeUnknownEffect(
+              ScopesUpdatePayload,
+            )(JSON.parse(result.rawBody));
             const id = yield* shopify.offlineSessionId(result.domain);
             yield* shopify.updateSessionScope({
               id,
