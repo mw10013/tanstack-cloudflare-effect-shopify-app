@@ -10,7 +10,6 @@ interface ShopifyConfig {
   readonly apiKey: Redacted.Redacted;
   readonly apiSecretKey: Redacted.Redacted;
   readonly appUrl: string;
-  readonly scopes: string[] | undefined;
 }
 
 export class ShopifyError extends Schema.TaggedErrorClass<ShopifyError>()(
@@ -54,32 +53,13 @@ const shopifyConfig = Config.all({
         : `https://${value}`,
     ),
   ),
-  scopes: Config.option(Config.nonEmptyString("SCOPES")).pipe(
-    Config.map((value) =>
-      Option.match(value, {
-        onNone: () => [],
-        onSome: (scopeValue) =>
-          scopeValue
-            .split(",")
-            .map((scope) => scope.trim())
-            .filter((scope) => scope.length > 0),
-      }),
-    ),
-    Config.map((scopes) => (scopes.length > 0 ? scopes : undefined)),
-  ),
 });
 
-const makeShopifyApi = ({
-  apiKey,
-  apiSecretKey,
-  appUrl,
-  scopes,
-}: ShopifyConfig) => {
+const makeShopifyApi = ({ apiKey, apiSecretKey, appUrl }: ShopifyConfig) => {
   const { host, protocol } = new URL(appUrl);
   return ShopifyApi.shopifyApi({
     apiKey: Redacted.value(apiKey),
     apiSecretKey: Redacted.value(apiSecretKey),
-    scopes,
     hostName: host,
     hostScheme: protocol.replace(":", "") as "http" | "https",
     apiVersion: ShopifyApi.ApiVersion.January26,
