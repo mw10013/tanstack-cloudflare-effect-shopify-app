@@ -20,14 +20,14 @@ export const Route = createFileRoute("/webhooks/app/scopes_update")({
               readonly current?: readonly string[];
             };
             if (!Array.isArray(payload.current)) {
-              return new Response(null, { status: 200 });
+              return new Response();
             }
             const id = yield* shopify.offlineSessionId(result.domain);
             yield* shopify.updateSessionScope({
               id,
               scope: payload.current.toString(),
             });
-            return new Response(null, { status: 200 });
+            return new Response();
           }),
         ),
     },

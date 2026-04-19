@@ -107,6 +107,25 @@ const tryShopifyPromise = <A>(evaluate: () => Promise<A>) =>
       }),
   });
 
+/**
+ * Sessions are stored as a JSON blob of `Session.toPropertyArray(true)` rather than flat columns.
+ * This deviates from the official Shopify session storage adapters (SQLite, Prisma), which map
+ * each session field to a dedicated column and ship their own migration runners to handle SDK
+ * field additions or renames.
+ *
+ * The blob approach avoids painful column-level migrations for additive SDK changes (new fields
+ * just appear in the blob), but carries a risk if `@shopify/shopify-api` changes field names or
+ * encoding: old blobs may deserialize incorrectly without throwing.
+ *
+ * Hard failures (e.g. `Session.fromPropertyArray` throws `InvalidSession`) are caught as
+ * `ShopifyError` and cause `loadSession` to return `Option.none()`, which triggers OAuth
+ * re-authentication and a fresh session blob written by `storeSession`. This self-heals the row.
+ *
+ * For any upgrade to `@shopify/shopify-api`, audit `node_modules/@shopify/shopify-api/lib/session/session.ts`
+ * for changes to `propertiesToSave`, `toPropertyArray`, and `fromPropertyArray`. If session
+ * serialization changed, it is advisable to wipe the `ShopifySession` table via a D1 migration
+ * so all merchants re-authenticate and receive a fresh blob in the current format.
+ */
 const decodeSessionPayload = Effect.fn("Shopify.decodeSessionPayload")(
   function* (payload: string) {
     const parsed = yield* tryShopify(() => JSON.parse(payload) as unknown);
