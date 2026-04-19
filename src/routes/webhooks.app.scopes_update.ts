@@ -12,12 +12,11 @@ export const Route = createFileRoute("/webhooks/app/scopes_update")({
           Effect.gen(function* () {
             const request = yield* AppRequest;
             const shopify = yield* Shopify;
-            const rawBody = yield* Effect.tryPromise(() => request.text());
-            const result = yield* shopify.validateWebhook({ rawBody, request });
+            const result = yield* shopify.validateWebhook(request);
             if (!result.valid) {
               return new Response("Invalid webhook", { status: 401 });
             }
-            const payload = JSON.parse(rawBody) as {
+            const payload = JSON.parse(result.rawBody) as {
               readonly current?: readonly string[];
             };
             if (!Array.isArray(payload.current)) {

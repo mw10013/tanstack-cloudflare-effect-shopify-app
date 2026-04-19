@@ -73,21 +73,9 @@ Delegates to `shopify-api-node`'s `webhooks.validate`, which:
 3. Compares via timing-safe equality
 4. Returns `{ valid: boolean, domain: string, ... }`
 
-The ref library's own authenticate flow does the same thing (`refs/shopify-app-js/.../authenticate/webhooks/authenticate.ts:30`):
-```ts
-const check = await api.webhooks.validate({ rawBody, rawRequest: request });
-if (!check.valid) {
-  if (check.reason === WebhookValidationErrorReason.InvalidHmac) {
-    throw new Response(undefined, { status: 401, ... });
-  } else {
-    throw new Response(undefined, { status: 400, ... });
-  }
-}
-```
+**API deviation from `shopify.webhooks.validate`:** the underlying API takes `{ rawBody, rawRequest }` and the ref's `authenticate.webhook` also reads the body internally but discards it. `validateWebhook` reads the body internally *and* returns it as `{ ...result, rawBody }` — callers that need the payload (e.g. `scopes_update`) get it from the return value rather than managing their own `request.text()` call. The "body stream can only be read once" constraint is fully encapsulated.
 
-Aligned with the ref: `InvalidHmac` → 401, all other reasons (`MissingBody`, `MissingHmac`, `MissingHeaders`) → 400. The route branches on `result.reason` after `validateWebhook` returns invalid.
-
-The raw body is read before validation and passed explicitly, which is required: the request body stream can only be read once.
+Aligned with the ref on status codes: `InvalidHmac` → 401, all other reasons (`MissingBody`, `MissingHmac`, `MissingHeaders`) → 400.
 
 ## deleteSessionsByShop (`src/lib/Shopify.ts:218`)
 

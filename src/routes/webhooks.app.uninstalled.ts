@@ -21,8 +21,7 @@ export const Route = createFileRoute("/webhooks/app/uninstalled")({
           Effect.gen(function* () {
             const request = yield* AppRequest;
             const shopify = yield* Shopify;
-            const rawBody = yield* Effect.tryPromise(() => request.text());
-            const result = yield* shopify.validateWebhook({ rawBody, request });
+            const result = yield* shopify.validateWebhook(request);
             if (!result.valid) {
               return result.reason === WebhookValidationErrorReason.InvalidHmac
                 ? new Response("Unauthorized", { status: 401 })

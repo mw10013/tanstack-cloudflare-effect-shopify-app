@@ -287,14 +287,24 @@ on conflict(id) do update set
         });
       }),
     );
+    /**
+     * Validates an incoming Shopify webhook request.
+     *
+     * Deviates from `shopify.webhooks.validate({ rawBody, rawRequest })`: reads
+     * the body internally (stream can only be consumed once) and returns it
+     * alongside the validation result so callers that need the payload don't
+     * have to read the body themselves.
+     */
     const validateWebhook = Effect.fn("Shopify.validateWebhook")(
-      function* ({ rawBody, request }: { rawBody: string; request: Request }) {
-        return yield* tryShopifyPromise(() =>
+      function* (request: Request) {
+        const rawBody = yield* Effect.tryPromise(() => request.text());
+        const result = yield* tryShopifyPromise(() =>
           shopify.webhooks.validate({
             rawBody,
             rawRequest: request,
           }),
         );
+        return { ...result, rawBody };
       },
     );
     const authenticateAdmin = Effect.fn("Shopify.authenticateAdmin")(
