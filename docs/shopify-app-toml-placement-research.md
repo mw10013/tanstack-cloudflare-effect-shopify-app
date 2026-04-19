@@ -1,91 +1,82 @@
-# shopify.app.toml Placement Research
+# shopify.app.toml and shopify.web.toml Placement
 
-## Verdict
+## What happened
 
-**The LLM's note is sound.** `shopify.app.toml` belongs at the project root, not under `.shopify-cli/`. This project currently only has it under `.shopify-cli/shopify.app.toml`, which is the CLI's runtime state/cache directory — not the intended location for the checked-in config file.
+Both config files were committed under `.shopify-cli/` (a non-standard directory), and `package.json` scripts used `--path .shopify-cli` to point the CLI there. The `.shopify-cli/` name was a mistake — likely chosen to signal "Shopify CLI config" but it's not a special directory the CLI looks for.
 
-## Evidence
+As a side effect, `shopify app dev` created its runtime state at `.shopify-cli/.shopify/` (relative to where it found `shopify.app.toml`) instead of `.shopify/` at the project root.
 
-### Template places it at root
+**Fixed:** both files are now at the project root and `--path .shopify-cli` removed from all scripts.
 
-`refs/shopify-app-template/shopify.app.toml` is a root-level file:
+---
 
-```
-refs/shopify-app-template/
-├── shopify.app.toml        ← root-level
-├── shopify.web.toml.liquid
-├── app/
-├── prisma/
-└── ...
-```
+## Where these files belong
 
-The template's `.gitignore` explicitly ignores `.shopify/*` and `.shopify.lock` (the CLI's runtime state) while committing `shopify.app.toml` at root:
+### shopify.app.toml
 
-```gitignore
-# Ignore shopify files created during app dev
-.shopify/*
-.shopify.lock
-```
+The primary app configuration file. Shopify CLI reads and writes it at the project root.
 
-### `.shopify-cli/` is CLI state, not project config
+- `shopify app config link` — creates/overwrites it at root, pulls from Partner Dashboard
+- `shopify app config pull` — updates it from the linked app
+- `shopify app deploy` — reads it to push config to Partner Dashboard (`include_config_on_deploy = true`)
+- Belongs in git; is the source of truth for app config
 
-This project only has `shopify.app.toml` under `.shopify-cli/`:
+Template reference: `refs/shopify-app-template/shopify.app.toml` is at root. Template `.gitignore` ignores `.shopify/*` (runtime state) but commits `shopify.app.toml`.
 
-```
-.shopify-cli/
-├── shopify.app.toml   ← CLI cache/state, not the real config
-├── shopify.web.toml
-└── extensions/
-```
+### shopify.web.toml
 
-The `.shopify-cli/` directory is where the Shopify CLI caches runtime state. Historically, older CLI versions wrote `.shopify-cli/` as their working directory. The modern CLI (`shopify app config link`) generates `shopify.app.toml` at the project root and uses `.shopify/` (not `.shopify-cli/`) for state.
+Tells `shopify app dev` how to start the app: `commands.dev`, port, roles, webhook reset path.
 
-### CLI config commands target root-level file
+From `refs/shopify-docs/docs/apps/build/cli-for-apps/app-structure.md`:
+> The CLI expects at least one `shopify.web.toml` with `roles` including `frontend`, or with no type/roles specified. **This file can be at the root of the project, or in a project subdirectory.**
 
-From `refs/shopify-docs/docs/api/shopify-cli/app/app-config-link.md`:
+Key fields:
 
-> Pulls app configuration from the Developer Dashboard and **creates or overwrites a configuration file**.
+| Field | Required | Description |
+|---|---|---|
+| `roles` | No | `["frontend", "backend", "background"]` |
+| `webhooks_path` | No | Path for `dev --reset` uninstall webhook |
+| `port` | No | Fixed port; random if unset |
+| `commands.dev` | **Yes** | Run by `shopify app dev` |
+| `commands.build` | No | Run by `shopify app build` |
 
-From `refs/shopify-docs/docs/api/shopify-cli/app/app-config-pull.md`:
+Template ships `shopify.web.toml.liquid` (scaffold template rendered to `shopify.web.toml` at root).
 
-> Pulls the latest configuration from the already-linked Shopify app and **updates the selected configuration file**.
+### .shopify/ (runtime state — not committed)
 
-Both commands operate on root-level `shopify.app.toml` (or named variants like `shopify.app.staging.toml`). The `--config` flag selects among these root-level configs.
+Created by the CLI at runtime alongside `shopify.app.toml`. Contains:
 
-## What to Do
+- `project.json` — maps `client_id` → dev store URL
+- `dev-bundle/` — compiled app config bundle from last `shopify app dev` run
+- `.gitignore` (ignores `*`) — written by CLI itself
 
-1. Create `shopify.app.toml` at the project root by running `shopify app config link` (which generates it from the Partner Dashboard), or manually copy and adapt from `.shopify-cli/shopify.app.toml`.
-2. The `.shopify-cli/` directory should be git-ignored (it is already not committed based on `.gitignore` patterns).
-3. The root `shopify.app.toml` should be committed to git — it's the app's source of truth for configuration (`include_config_on_deploy = true` in the current `.shopify-cli/` version means deploy reads from this file).
+Both `.shopify/` and `.shopify-cli/` are now in `.gitignore`.
 
-## Current State
+---
 
-`.shopify-cli/shopify.app.toml` (the only toml currently) contains a real `client_id` and configuration:
+## Re-linking after the move
 
-```toml
-client_id = "9a91c9ff6ba488dafb39a7c696429753"
-name = "tanstack-start"
-application_url = "https://shopify.dev/apps/default-app-home"
-embedded = true
+The `.shopify/project.json` at root is empty (`{}`), so the CLI has lost its dev store association. On next `shopify app dev`:
 
-[build]
-automatically_update_urls_on_dev = true
-include_config_on_deploy = true
+1. CLI will find `shopify.app.toml` at root, read `client_id`
+2. Prompt: "Which store do you want to use?" → enter `sandbox-shop-01.myshopify.com`
+3. CLI writes the association to `.shopify/project.json` and proceeds
 
-[webhooks]
-api_version = "2026-07"
-  [[webhooks.subscriptions]]
-  topics = [ "app/uninstalled" ]
-  uri = "/webhooks/app/uninstalled"
-  [[webhooks.subscriptions]]
-  topics = [ "app/scopes_update" ]
-  uri = "/webhooks/app/scopes_update"
+No full re-link or redeploy is needed for dev. For production, `shopify app deploy` works normally from the root-level config.
 
-[access_scopes]
-scopes = "write_products"
-
-[auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+**Optional:** to pre-populate the dev store without running `shopify app dev`:
+```sh
+pnpm shopify:config:link --client-id 9a91c9ff6ba488dafb39a7c696429753
 ```
 
-This content is what belongs at the project root (with `client_id` possibly kept out of git if treating it as sensitive, though Shopify treats client IDs as non-secret).
+---
+
+## Cleanup steps (one-time, after committing)
+
+Remove the now-untracked `.shopify-cli/` directory from disk:
+
+```sh
+rm -rf .shopify-cli
+```
+
+The `.shopify/` at root is already ignored and will be recreated by the CLI on next `shopify app dev`.
