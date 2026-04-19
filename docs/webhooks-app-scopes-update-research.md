@@ -203,6 +203,11 @@ The template uses Prisma with `scope` as a dedicated DB column. The logic is oth
 
 **Key difference**: the template relies on `authenticate.webhook()` resolving the session directly and guards on `if (session)`. Our implementation uses `offlineSessionId` + explicit lookup and guards with `Option.isNone` — functionally equivalent, adapted to our D1/Effect stack.
 
+`authenticate.webhook()` returns the **offline** session for the shop (`refs/shopify-docs/docs/api/shopify-app-react-router/v1/authenticate/webhook.md:225`):
+> "A session with an offline token for the shop."
+
+So `session.id` in the template equals `offline_${shop}` — the same value `offlineSessionId(result.domain)` produces via `getOfflineId(shop)`. The use of offline (vs. online) session is correct: the offline token is shop-scoped and persists across user sessions, making it the right target for a scope update that applies to the installation as a whole.
+
 ### `refs/shopify-app-template/shopify.app.toml` (lines 16–19)
 
 ```toml

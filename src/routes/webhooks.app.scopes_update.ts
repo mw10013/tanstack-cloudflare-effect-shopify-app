@@ -23,6 +23,7 @@ export const Route = createFileRoute("/webhooks/app/scopes_update")({
             const payload = yield* Schema.decodeUnknownEffect(
               ScopesUpdatePayload,
             )(JSON.parse(result.rawBody));
+            // Webhooks target the offline (shop-level) session; same session type authenticate.webhook() returns in the official library.
             const id = yield* shopify.offlineSessionId(result.domain);
             yield* shopify.updateSessionScope({
               id,
