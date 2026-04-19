@@ -6,4 +6,5 @@ create table if not exists ShopifySession (
   updatedAt text not null default (datetime('now'))
 );
 
-create index if not exists idx_ShopifySession_shop on ShopifySession (shop);
+--> statement-breakpoint
+create index if not exists ShopifySessionShopIndex on ShopifySession (shop);
