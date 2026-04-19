@@ -5,6 +5,14 @@ import { Effect } from "effect";
 import { Request as AppRequest } from "@/lib/Request";
 import { Shopify } from "@/lib/Shopify";
 
+/**
+ * Handles the app/uninstalled webhook from Shopify.
+ *
+ * Deletes all sessions for the shop unconditionally — a single DB call whether
+ * this is the first delivery or a retry after sessions are already gone.
+ * The template pattern (load session → guard delete) costs two DB calls on
+ * first uninstall; the unconditional delete costs one in all cases.
+ */
 export const Route = createFileRoute("/webhooks/app/uninstalled")({
   server: {
     handlers: {
