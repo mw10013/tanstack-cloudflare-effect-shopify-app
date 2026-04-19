@@ -8,6 +8,11 @@ import { Shopify } from "@/lib/Shopify";
 /**
  * Handles the app/uninstalled webhook from Shopify.
  *
+ * When a merchant uninstalls the app, their OAuth tokens are immediately
+ * invalidated. Retaining stale sessions risks conflicting OAuth flows on
+ * re-install and breaks the GDPR compliance chain — shop/redact fires 48 hours
+ * later and expects sessions already gone.
+ *
  * Deletes all sessions for the shop unconditionally — a single DB call whether
  * this is the first delivery or a retry after sessions are already gone.
  * The template pattern (load session → guard delete) costs two DB calls on
