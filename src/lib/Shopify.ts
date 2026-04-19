@@ -69,19 +69,19 @@ const shopifyConfig = Config.all({
   ),
 });
 
-const createShopifyApi = ({
+const makeShopifyApi = ({
   apiKey,
   apiSecretKey,
   appUrl,
   scopes,
 }: ShopifyConfig) => {
-  const appUrlObject = new URL(appUrl);
+  const { host, protocol } = new URL(appUrl);
   return ShopifyApi.shopifyApi({
     apiKey: Redacted.value(apiKey),
     apiSecretKey: Redacted.value(apiSecretKey),
     scopes,
-    hostName: appUrlObject.host,
-    hostScheme: appUrlObject.protocol.replace(":", "") as "http" | "https",
+    hostName: host,
+    hostScheme: protocol.replace(":", "") as "http" | "https",
     apiVersion: ShopifyApi.ApiVersion.January26,
     isEmbeddedApp: true,
   });
@@ -161,7 +161,7 @@ const renderExitIframePage = (
   );
 
 const buildAdminContext = (
-  shopify: ReturnType<typeof createShopifyApi>,
+  shopify: ReturnType<typeof makeShopifyApi>,
   session: ShopifyApi.Session,
 ): ShopifyAdminContext => ({
   session,
@@ -180,7 +180,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
   make: Effect.gen(function* () {
     const d1 = yield* D1;
     const config = yield* shopifyConfig;
-    const shopify = createShopifyApi(config);
+    const shopify = makeShopifyApi(config);
     const storeSession = Effect.fn("Shopify.storeSession")(function* (
       session: ShopifyApi.Session,
     ) {
