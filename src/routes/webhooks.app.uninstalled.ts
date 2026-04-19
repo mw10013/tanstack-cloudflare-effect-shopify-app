@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { WebhookValidationErrorReason } from "@shopify/shopify-api";
 import { Effect } from "effect";
 
 import { Request as AppRequest } from "@/lib/Request";
@@ -15,7 +16,9 @@ export const Route = createFileRoute("/webhooks/app/uninstalled")({
             const rawBody = yield* Effect.tryPromise(() => request.text());
             const result = yield* shopify.validateWebhook({ rawBody, request });
             if (!result.valid) {
-              return new Response("Invalid webhook", { status: 401 });
+              return result.reason === WebhookValidationErrorReason.InvalidHmac
+                ? new Response("Unauthorized", { status: 401 })
+                : new Response("Bad Request", { status: 400 });
             }
             yield* shopify.deleteSessionsByShop(result.domain);
             return new Response(null, { status: 200 });
