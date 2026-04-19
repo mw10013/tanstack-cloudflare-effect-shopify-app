@@ -129,17 +129,13 @@ export default {
             }),
           catch: (cause) => cause,
         });
-        if (!response.headers.get("content-type")?.startsWith("text/html")) {
-          return response;
-        }
-        const headers = new Headers(response.headers);
+        /**
+         * Shopify encapsulates document response policy here: HTML gate,
+         * shop-param sanitization, and the Cloudflare immutable-response
+         * clone/new-Response pattern for header updates.
+         */
         const shopify = yield* Shopify;
-        yield* shopify.addDocumentResponseHeaders(request, headers);
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers,
-        });
+        return yield* shopify.withShopifyDocumentHeaders(request, response);
       }),
     );
   },

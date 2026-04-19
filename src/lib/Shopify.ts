@@ -124,10 +124,7 @@ const decodeEffectSessionPayload = Effect.fn("Shopify.decodeSessionPayload")(
   },
 );
 
-const applyEffectDocumentHeaders = (headers: Headers, shop: string | null) => {
-  if (!shop) {
-    return;
-  }
+const setShopifyDocumentHeaders = (headers: Headers, shop: string) => {
   headers.set(
     "Link",
     `<${CDN_URL}>; rel="preconnect", <${APP_BRIDGE_URL}>; rel="preload"; as="script", <${POLARIS_URL}>; rel="preload"; as="script"`,
@@ -140,7 +137,9 @@ const applyEffectDocumentHeaders = (headers: Headers, shop: string | null) => {
 
 const buildEffectDocumentResponseHeaders = (shop: string | null) => {
   const headers = new Headers({ "content-type": "text/html;charset=utf-8" });
-  applyEffectDocumentHeaders(headers, shop);
+  if (shop) {
+    setShopifyDocumentHeaders(headers, shop);
+  }
   return headers;
 };
 
@@ -253,12 +252,41 @@ on conflict(id) do update set
         );
       },
     );
-    const addDocumentResponseHeaders = (request: Request, headers: Headers) =>
+    /**
+     * Returns a Response with Shopify document headers applied when needed.
+     *
+     * Behavior:
+     * - Non-HTML responses are returned unchanged.
+     * - HTML responses without a valid `shop` query param are returned unchanged.
+     * - HTML responses with a valid `shop` are returned as a new Response with
+     *   Link preload/preconnect and frame-ancestors CSP headers.
+     *
+     * Cloudflare Workers documents upstream responses as immutable, so header
+     * changes are applied by cloning headers and returning a new Response.
+     */
+    const withShopifyDocumentHeaders = Effect.fn(
+      "Shopify.withShopifyDocumentHeaders",
+    )((request: Request, response: Response) =>
+      // Lift sync header/response logic into the Effect description so it runs
+      // when the Effect is executed by the runtime, not at definition time.
       Effect.sync(() => {
+        if (!response.headers.get("content-type")?.startsWith("text/html")) {
+          return response;
+        }
         const shopParam = new URL(request.url).searchParams.get("shop");
         const shop = shopParam ? shopify.utils.sanitizeShop(shopParam) : null;
-        applyEffectDocumentHeaders(headers, shop);
-      });
+        if (!shop) {
+          return response;
+        }
+        const headers = new Headers(response.headers);
+        setShopifyDocumentHeaders(headers, shop);
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+      }),
+    );
     const validateWebhook = Effect.fn("Shopify.validateWebhook")(
       function* ({ rawBody, request }: { rawBody: string; request: Request }) {
         return yield* tryShopifyPromise(() =>
@@ -396,7 +424,7 @@ on conflict(id) do update set
       config,
       authenticateAdmin,
       login,
-      addDocumentResponseHeaders,
+      withShopifyDocumentHeaders,
       validateWebhook,
       storeSession,
       loadSession,
