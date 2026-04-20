@@ -4,8 +4,6 @@ import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect
 
 import { D1 } from "@/lib/D1";
 
-type SessionEntry = [string, string | number | boolean];
-
 interface ShopifyConfig {
   readonly apiKey: Redacted.Redacted;
   readonly apiSecretKey: Redacted.Redacted;
@@ -106,6 +104,17 @@ const tryShopifyPromise = <A>(evaluate: () => Promise<A>) =>
  * serialization changed, it is advisable to wipe the `ShopifySession` table via a D1 migration
  * so all merchants re-authenticate and receive a fresh blob in the current format.
  */
+/**
+ * Deserializes a stored session blob back into a `Session` object.
+ *
+ * The payload is `JSON.stringify(session.toPropertyArray(true))` written by
+ * `storeSession`. `fromPropertyArray` accepts `[string, string | number |
+ * boolean][]` but coerces every known field internally (via `String()`,
+ * `Number()`, `Boolean()`, `new Date()`), so element-level type validation is
+ * not needed — unexpected values surface as `InvalidSession` which `tryShopify`
+ * catches as `ShopifyError`. Callers treat `ShopifyError` as `Option.none()`,
+ * triggering OAuth re-authentication and a fresh blob on the next login.
+ */
 const decodeSessionPayload = Effect.fn("Shopify.decodeSessionPayload")(
   function* (payload: string) {
     const parsed = yield* tryShopify(() => JSON.parse(payload) as unknown);
@@ -118,7 +127,10 @@ const decodeSessionPayload = Effect.fn("Shopify.decodeSessionPayload")(
       );
     }
     return yield* tryShopify(() =>
-      ShopifyApi.Session.fromPropertyArray(parsed as SessionEntry[], true),
+      ShopifyApi.Session.fromPropertyArray(
+        parsed as [string, string | number | boolean][],
+        true,
+      ),
     );
   },
 );
