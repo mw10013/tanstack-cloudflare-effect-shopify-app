@@ -226,8 +226,10 @@ This is also exactly the `refs/tces` pattern:
 Suggested split:
 
 - `src/lib/Domain.ts`
-  - add `ShopifySession` row schema (`id`, `shop`, `payload`, `createdAt`, `updatedAt`)
-  - add payload encode/decode helpers for Shopify `Session`
+  - add domain schemas following `refs/tces` style (`User`, `Session`, `Organization`)
+  - for `ShopifySession`, model persisted fields we actually store (`id`, `shop`, `payload`, `createdAt`, `updatedAt`)
+  - add `ShopifySessionId` / `ShopDomain` brands if helpful
+  - keep `payload` as opaque `Schema.String` in domain for now
   - keep room for future domain schemas in same file (or future `*Domain.ts` modules if it grows)
 - `src/lib/Repository.ts`
   - add `upsertShopifySession(session: ShopifyApi.Session)`
@@ -276,11 +278,188 @@ Add a `SchemaEx`-style helper only if you later introduce many SQL JSON aggregat
 
 ## Proposed implementation shape (minimal, incremental)
 
-1. Add `src/lib/Domain.ts` with ShopifySession schema + payload encode/decode helpers.
+1. Add `src/lib/Domain.ts` with DB-aligned `ShopifySession` domain model (no `*Row` naming).
 2. Add `src/lib/Repository.ts` service (Context.Service + Layer) with ShopifySession methods first.
 3. Move SQL from `src/lib/Shopify.ts` into repository methods.
 4. Keep current table shape (`id`, `shop`, `payload`, timestamps) and behavior.
 5. Keep current self-heal behavior on bad payload (decode failure -> `Option.none()` -> re-auth flow).
+
+## Effect v4 Schema research for `payload`
+
+Scanned `refs/effect4` for the best Schema-first way to parse the session payload.
+
+### What Effect v4 gives us directly
+
+`fromJsonString` is exactly the primitive for "payload column is JSON text":
+
+`refs/effect4/packages/effect/src/Schema.ts:8963`
+
+```ts
+Returns a schema that decodes a JSON string and then decodes the parsed value using the given schema.
+```
+
+And `SchemaTransformation.fromJsonString` uses `JSON.parse` / `JSON.stringify` under the hood:
+
+`refs/effect4/packages/effect/src/SchemaTransformation.ts:1455`
+
+```ts
+- Decode: calls `JSON.parse`. Fails if the string is not valid JSON.
+- Encode: calls `JSON.stringify`.
+```
+
+So we can replace manual `JSON.parse(payload)` with a Schema codec pipeline.
+
+### Important typing detail: arrays/tuples are readonly by default
+
+Effect v4 array and tuple schemas infer readonly output by default:
+
+- `Schema.Array` defines `ReadonlyArray`: `refs/effect4/packages/effect/src/Schema.ts:3209`
+- `Schema.Tuple` docs show fixed tuple constructor and readonly tuple typing machinery: `refs/effect4/packages/effect/src/Schema.ts:3053`
+
+But Shopify `Session.fromPropertyArray` expects mutable `entries: [string, string | number | boolean][]`.
+
+Effect v4 has `Schema.mutable` to remove readonly from arrays/tuples:
+
+`refs/effect4/packages/effect/src/Schema.ts:3392`
+
+```ts
+Makes an array or tuple schema mutable, removing the `readonly` modifier.
+```
+
+This means we can get the exact Shopify parameter type without `as` casts.
+
+### Optional future payload schema (if we later type payload entries)
+
+```ts
+const ShopifySessionEntry = Schema.mutable(
+  Schema.Tuple([
+    Schema.String,
+    Schema.Union([Schema.String, Schema.Number, Schema.Boolean]),
+  ]),
+)
+
+const ShopifySessionEntriesFromJson = Schema.fromJsonString(
+  Schema.mutable(Schema.Array(ShopifySessionEntry)),
+)
+```
+
+If adopted later, decode path becomes:
+
+1. payload text -> JSON parse + structural validation via `Schema.decodeUnknownEffect(ShopifySessionEntriesFromJson)(payload)`
+2. validated entries -> `Session.fromPropertyArray(entries, true)`
+
+### Error-channel behavior
+
+`Schema.decodeUnknownEffect` returns `Effect<_, Issue.Issue, _>`:
+
+`refs/effect4/packages/effect/src/SchemaParser.ts:137`
+
+```ts
+decodeUnknownEffect(schema): (input) => Effect.Effect<S["Type"], Issue.Issue, ...>
+```
+
+So in our service we should map `Issue.Issue` to `ShopifyError`, preserving current behavior (decode failure -> `Option.none()` -> re-auth).
+
+### Practical conclusion for this repo
+
+- Yes, Effect v4 Schema can handle this payload cleanly.
+- For now, keep `payload` opaque in `ShopifySession` domain.
+- If we later need stronger payload typing, `Schema.fromJsonString(...)` + mutable tuple/array schemas is the clean upgrade path.
+
+## Implementation plan
+
+No blocking questions.
+
+### Phase 1: add `src/lib/Domain.ts`
+
+Define shared schemas/codecs:
+
+- `ShopifySession` with persisted fields: `id`, `shop`, `payload`, `createdAt`, `updatedAt`
+- optional payload helper only at JSON-string boundary (`Schema.UnknownFromJsonString`), not a dedicated payload domain type yet
+
+Naming rule:
+
+- no `*Row` naming
+- `Domain` models app concepts in the same style as `refs/tces/src/lib/Domain.ts:88` (`User`) and `refs/tces/src/lib/Domain.ts:104` (`Session`)
+- `ShopifySession` in domain includes persisted fields because that is the app concept we have today
+
+Use Effect Schema APIs directly:
+
+- decode path via `Schema.decodeUnknownEffect(...)` (`refs/effect4/packages/effect/src/SchemaParser.ts:137`)
+- JSON-string codec via `Schema.fromJsonString(...)` (`refs/effect4/packages/effect/src/Schema.ts:8963`)
+
+Concrete `Domain.ts` sketch (simplified, DB-aligned):
+
+```ts
+import { Schema } from "effect";
+
+export const ShopifySessionId = Schema.NonEmptyString.pipe(
+  Schema.brand("ShopifySessionId"),
+);
+export type ShopifySessionId = typeof ShopifySessionId.Type;
+
+export const ShopDomain = Schema.NonEmptyString.pipe(Schema.brand("ShopDomain"));
+export type ShopDomain = typeof ShopDomain.Type;
+
+export const ShopifySession = Schema.Struct({
+  id: ShopifySessionId,
+  shop: ShopDomain,
+  payload: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+export type ShopifySession = typeof ShopifySession.Type;
+```
+
+Use inline decoding/encoding at call sites for now:
+
+```ts
+yield* Schema.decodeUnknownEffect(ShopifySession)(value)
+yield* Schema.decodeUnknownEffect(Schema.UnknownFromJsonString)(payload)
+yield* Schema.encodeUnknownEffect(Schema.UnknownFromJsonString)(json)
+```
+
+### Phase 2: add `src/lib/Repository.ts`
+
+Create `Context.Service` repository (matching `refs/tces` style) and move SQL here:
+
+- `upsertShopifySession(session)`
+- `findShopifySessionById(id)`
+- `deleteShopifySessionsByShop(shop)`
+- `updateShopifySessionScope({ id, scope })`
+
+Repository should:
+
+- encode payload with `session.toPropertyArray(true)` + schema/codec
+- decode payload through Domain codecs, then hydrate with `Session.fromPropertyArray(..., true)`
+- map schema parse failures to existing `ShopifyError` path
+
+### Phase 3: refactor `src/lib/Shopify.ts`
+
+Replace direct D1 usage with repository calls:
+
+- remove inline SQL at `src/lib/Shopify.ts:202`, `src/lib/Shopify.ts:219`, `src/lib/Shopify.ts:232`, `src/lib/Shopify.ts:257`
+- keep auth/webhook orchestration in `Shopify` service only
+- preserve current self-heal behavior (`Option.none()` on decode/load failure -> re-auth path)
+
+### Phase 4: layer wiring
+
+Wire `Repository.layer` where app runtime is built (`src/worker.ts`) so `Shopify.layer` can depend on `Repository` instead of raw `D1`.
+
+### Phase 5: verify
+
+Run project checks:
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`
+
+### Acceptance criteria
+
+- `Shopify.ts` has no low-level session SQL
+- all `ShopifySession` SQL lives in `Repository.ts`
+- payload parsing/stringifying uses Effect Schema JSON codec path (no manual `JSON.parse` in session repository path)
+- webhook routes keep current behavior (uninstall delete by shop, scopes update mutate scope)
 
 ## Bottom line
 
