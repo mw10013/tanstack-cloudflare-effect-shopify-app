@@ -120,8 +120,8 @@ const ShopifyApiProps = Schema.Struct({
   refreshTokenExpires: Schema.optional(Schema.Number),
 });
 
-const ShopifySessionFromApiProps = ShopifyApiProps.pipe(
-  Schema.decodeTo(Domain.ShopifySession, {
+const SessionFromApiProps = ShopifyApiProps.pipe(
+  Schema.decodeTo(Domain.Session, {
     decode: SchemaGetter.transform((props) => ({
       id: props.id,
       shop: props.shop,
@@ -165,14 +165,14 @@ const ShopifySessionFromApiProps = ShopifyApiProps.pipe(
 
 const sessionToRow = (session: ShopifyApi.Session) =>
   tryShopify(() =>
-    Schema.decodeUnknownSync(ShopifySessionFromApiProps)(
+    Schema.decodeUnknownSync(SessionFromApiProps)(
       Object.fromEntries(session.toPropertyArray(true)),
     ),
   );
 
-const rowToSession = (row: Domain.ShopifySession) =>
+const rowToSession = (row: Domain.Session) =>
   tryShopify(() => {
-    const props = Schema.encodeSync(ShopifySessionFromApiProps)(row);
+    const props = Schema.encodeSync(SessionFromApiProps)(row);
     return ShopifyApi.Session.fromPropertyArray(
       Object.entries(props).filter(
         (entry): entry is [string, string | number | boolean] => entry[1] !== undefined,
@@ -241,10 +241,10 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     const storeSession = Effect.fn("Shopify.storeSession")(function* (
       session: ShopifyApi.Session,
     ) {
-      yield* sessionToRow(session).pipe(Effect.flatMap(repository.upsertShopifySession));
+      yield* sessionToRow(session).pipe(Effect.flatMap(repository.upsertSession));
     });
-    const loadSession = Effect.fn("Shopify.loadSession")(function* (id: Domain.ShopifySession["id"]) {
-      const row = yield* repository.findShopifySessionById(id);
+    const loadSession = Effect.fn("Shopify.loadSession")(function* (id: Domain.Session["id"]) {
+      const row = yield* repository.findSessionById(id);
       if (Option.isNone(row)) return Option.none();
       return yield* rowToSession(row.value).pipe(
         Effect.map(Option.some),
@@ -252,11 +252,11 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       );
     });
     const deleteSessionsByShop = Effect.fn("Shopify.deleteSessionsByShop")(
-      (shop: Domain.ShopifySession["shop"]) => repository.deleteShopifySessionsByShop(shop),
+      (shop: Domain.Session["shop"]) => repository.deleteSessionsByShop(shop),
     );
     const updateSessionScope = Effect.fn("Shopify.updateSessionScope")(
-      function* ({ id, scope }: Pick<Domain.ShopifySession, "id" | "scope">) {
-        yield* repository.updateShopifySessionScope(id, scope);
+      function* ({ id, scope }: Pick<Domain.Session, "id" | "scope">) {
+        yield* repository.updateSessionScope(id, scope);
       },
     );
     /**
@@ -437,8 +437,8 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         `https://${adminPath}/oauth/install?client_id=${Redacted.value(config.apiKey)}`,
       );
     });
-    const offlineSessionId = Effect.fn("Shopify.offlineSessionId")(function* (shop: Domain.ShopifySession["shop"]) {
-      return yield* Schema.decodeUnknownEffect(Domain.ShopifySessionId)(
+    const offlineSessionId = Effect.fn("Shopify.offlineSessionId")(function* (shop: Domain.Session["shop"]) {
+      return yield* Schema.decodeUnknownEffect(Domain.SessionId)(
         shopify.session.getOfflineId(shop),
       ).pipe(Effect.mapError((cause) => new ShopifyError({ message: "Invalid session id", cause })));
     });

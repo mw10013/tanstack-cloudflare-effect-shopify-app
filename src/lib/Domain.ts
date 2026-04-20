@@ -1,17 +1,17 @@
 import { Schema } from "effect";
 
-export const ShopifySessionId = Schema.NonEmptyString.pipe(
-  Schema.brand("ShopifySessionId"),
-);
-export type ShopifySessionId = typeof ShopifySessionId.Type;
-
 export const Shop = Schema.NonEmptyString.pipe(
   Schema.brand("Shop"),
 );
 export type Shop = typeof Shop.Type;
 
-export const ShopifySession = Schema.Struct({
-  id: ShopifySessionId,
+export const SessionId = Schema.NonEmptyString.pipe(
+  Schema.brand("SessionId"),
+);
+export type SessionId = typeof SessionId.Type;
+
+export const Session = Schema.Struct({
+  id: SessionId,
   shop: Shop,
   state: Schema.String,
   isOnline: Schema.Number,
@@ -29,4 +29,4 @@ export const ShopifySession = Schema.Struct({
   refreshToken: Schema.NullOr(Schema.String),
   refreshTokenExpires: Schema.NullOr(Schema.Number),
 });
-export type ShopifySession = typeof ShopifySession.Type;
+export type Session = typeof Session.Type;

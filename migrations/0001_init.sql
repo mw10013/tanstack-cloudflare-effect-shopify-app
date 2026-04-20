@@ -1,4 +1,4 @@
-create table if not exists ShopifySession (
+create table if not exists Session (
   id text primary key,
   shop text not null,
   state text not null,
@@ -19,4 +19,4 @@ create table if not exists ShopifySession (
 );
 
 --> statement-breakpoint
-create index if not exists ShopifySessionShopIndex on ShopifySession (shop);
+create index if not exists SessionShopIndex on Session (shop);
