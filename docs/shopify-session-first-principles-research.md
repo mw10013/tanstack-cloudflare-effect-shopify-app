@@ -861,7 +861,7 @@ export const ShopifySession = Schema.Struct({
   id: ShopifySessionId,
   shop: ShopDomain,
   state: Schema.String,
-  isOnline: Schema.Boolean,
+  isOnline: Schema.Number,
   scope: Schema.NullOr(Schema.String),
   expires: Schema.NullOr(Schema.Number),
   accessToken: Schema.NullOr(Schema.String),
@@ -869,10 +869,10 @@ export const ShopifySession = Schema.Struct({
   firstName: Schema.NullOr(Schema.String),
   lastName: Schema.NullOr(Schema.String),
   email: Schema.NullOr(Schema.String),
-  accountOwner: Schema.NullOr(Schema.Boolean),
+  accountOwner: Schema.NullOr(Schema.Number),
   locale: Schema.NullOr(Schema.String),
-  collaborator: Schema.NullOr(Schema.Boolean),
-  emailVerified: Schema.NullOr(Schema.Boolean),
+  collaborator: Schema.NullOr(Schema.Number),
+  emailVerified: Schema.NullOr(Schema.Number),
   refreshToken: Schema.NullOr(Schema.String),
   refreshTokenExpires: Schema.NullOr(Schema.Number),
 })
@@ -880,7 +880,7 @@ export const ShopifySession = Schema.Struct({
 
 Remove `ShopifySessionPayload`. No JSON blob columns remain.
 
-The exact `NullOr` vs optional choice should follow what D1 actually returns for nullable columns.
+D1 returns `null` for nullable columns. `Schema.NullOr` is correct for all optional fields. Boolean columns (`isOnline`, `accountOwner`, `collaborator`, `emailVerified`) are stored as `integer` in SQLite/D1 and returned as numbers — use `Schema.Number`, not `Schema.Boolean`.
 
 ### Repository
 
@@ -895,11 +895,12 @@ upsertShopifySession(row)
 deleteShopifySessionById(id)
 deleteShopifySessionsByIds(ids)
 deleteShopifySessionsByShop(shop)
+updateShopifySessionScope(id, scope)
 ```
 
 At this layer, no `ShopifyApi.Session` construction — only flat primitive row values.
 
-Remove `updateShopifySessionPayload`. Scope updates will use a targeted query at this layer.
+`updateShopifySessionScope` issues a targeted `UPDATE ... SET scope = ?1 WHERE id = ?2` with no load round-trip. This matches the reference template which patches the scope field directly on `app/scopes_update`.
 
 ### Shopify
 

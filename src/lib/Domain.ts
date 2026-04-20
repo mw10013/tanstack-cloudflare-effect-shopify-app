@@ -10,33 +10,23 @@ export const ShopDomain = Schema.NonEmptyString.pipe(
 );
 export type ShopDomain = typeof ShopDomain.Type;
 
-/**
- * Canonical in-memory shape for the JSON payload stored in `ShopifySession`.
- *
- * The domain model keeps this readonly. Shopify's mutable tuple-array typing is
- * handled at the integration boundary in `Shopify.ts`.
- */
-const ShopifySessionPayloadEntries = Schema.Array(
-  Schema.Tuple([
-    Schema.String,
-    Schema.Union([Schema.String, Schema.Number, Schema.Boolean]),
-  ]),
-);
-
-/**
- * D1 stores the Shopify session payload as a JSON string, but the decoded
- * domain value is the readonly tuple array representation of that payload.
- */
-export const ShopifySessionPayload = Schema.fromJsonString(
-  ShopifySessionPayloadEntries,
-);
-export type ShopifySessionPayload = typeof ShopifySessionPayload.Type;
-
 export const ShopifySession = Schema.Struct({
   id: ShopifySessionId,
   shop: ShopDomain,
-  payload: ShopifySessionPayload,
-  createdAt: Schema.String,
-  updatedAt: Schema.String,
+  state: Schema.String,
+  isOnline: Schema.Number,
+  scope: Schema.NullOr(Schema.String),
+  expires: Schema.NullOr(Schema.Number),
+  accessToken: Schema.NullOr(Schema.String),
+  userId: Schema.NullOr(Schema.Number),
+  firstName: Schema.NullOr(Schema.String),
+  lastName: Schema.NullOr(Schema.String),
+  email: Schema.NullOr(Schema.String),
+  accountOwner: Schema.NullOr(Schema.Number),
+  locale: Schema.NullOr(Schema.String),
+  collaborator: Schema.NullOr(Schema.Number),
+  emailVerified: Schema.NullOr(Schema.Number),
+  refreshToken: Schema.NullOr(Schema.String),
+  refreshTokenExpires: Schema.NullOr(Schema.Number),
 });
 export type ShopifySession = typeof ShopifySession.Type;

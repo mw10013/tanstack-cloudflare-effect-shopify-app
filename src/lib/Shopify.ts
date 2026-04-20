@@ -1,8 +1,8 @@
 import "@shopify/shopify-api/adapters/web-api";
 import * as ShopifyApi from "@shopify/shopify-api";
-import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
+import { Config, Context, Effect, Layer, Option, Redacted, Schema, SchemaGetter } from "effect";
 
-import type * as Domain from "@/lib/Domain";
+import * as Domain from "@/lib/Domain";
 import { Repository } from "@/lib/Repository";
 
 interface ShopifyConfig {
@@ -86,43 +86,100 @@ const tryShopifyPromise = <A>(evaluate: () => Promise<A>) =>
       }),
   });
 
-/**
- * Sessions are stored as a JSON blob of `Session.toPropertyArray(true)` rather than flat columns.
- * This deviates from the official Shopify session storage adapters (SQLite, Prisma), which map
- * each session field to a dedicated column and ship their own migration runners to handle SDK
- * field additions or renames.
- *
- * The blob approach avoids painful column-level migrations for additive SDK changes (new fields
- * just appear in the blob), but carries a risk if `@shopify/shopify-api` changes field names or
- * encoding: old blobs may deserialize incorrectly without throwing.
- *
- * Hard failures (e.g. `Session.fromPropertyArray` throws `InvalidSession`) are caught as
- * `ShopifyError` and cause `loadSession` to return `Option.none()`, which triggers OAuth
- * re-authentication and a fresh session blob written by `storeSession`. This self-heals the row.
- *
- * For any upgrade to `@shopify/shopify-api`, audit `node_modules/@shopify/shopify-api/lib/session/session.ts`
- * for changes to `propertiesToSave`, `toPropertyArray`, and `fromPropertyArray`. If session
- * serialization changed, it is advisable to wipe the `ShopifySession` table via a D1 migration
- * so all merchants re-authenticate and receive a fresh blob in the current format.
- */
-/**
- * Deserializes a stored session payload back into a `Session` object.
- *
- * `Repository` decodes the stored JSON string through `Domain.ShopifySession`,
- * so this function only needs to hand the validated tuple array to
- * `Session.fromPropertyArray`. The domain payload stays readonly; this function
- * makes a shallow mutable copy only to satisfy Shopify's mutable tuple-array
- * signature. Shopify still owns field coercion and session hydration semantics.
- */
-const decodeSessionPayload = Effect.fn("Shopify.decodeSessionPayload")(
-  (payload: Domain.ShopifySessionPayload) =>
-    tryShopify(() =>
-      ShopifyApi.Session.fromPropertyArray(
-        payload.map<[string, string | number | boolean]>(([key, value]) => [key, value]),
-        true,
-      ),
-    ),
+const boolOrNullToInt = (v: boolean | undefined): number | null => {
+  if (v === undefined) return null;
+  return v ? 1 : 0;
+};
+
+const intOrNullToBool = (v: number | null): boolean | undefined =>
+  v !== null ? v !== 0 : undefined;
+
+const msToSecOrNull = (v: number | undefined): number | null =>
+  v !== undefined ? Math.floor(v / 1000) : null;
+
+const secToMsOrUndefined = (v: number | null): number | undefined =>
+  v !== null ? v * 1000 : undefined;
+
+const ShopifyApiProps = Schema.Struct({
+  id: Schema.String,
+  shop: Schema.String,
+  state: Schema.String,
+  isOnline: Schema.Boolean,
+  scope: Schema.optional(Schema.String),
+  expires: Schema.optional(Schema.Number),
+  accessToken: Schema.optional(Schema.String),
+  userId: Schema.optional(Schema.Number),
+  firstName: Schema.optional(Schema.String),
+  lastName: Schema.optional(Schema.String),
+  email: Schema.optional(Schema.String),
+  accountOwner: Schema.optional(Schema.Boolean),
+  locale: Schema.optional(Schema.String),
+  collaborator: Schema.optional(Schema.Boolean),
+  emailVerified: Schema.optional(Schema.Boolean),
+  refreshToken: Schema.optional(Schema.String),
+  refreshTokenExpires: Schema.optional(Schema.Number),
+});
+
+const ShopifySessionFromApiProps = ShopifyApiProps.pipe(
+  Schema.decodeTo(Domain.ShopifySession, {
+    decode: SchemaGetter.transform((props) => ({
+      id: props.id,
+      shop: props.shop,
+      state: props.state,
+      isOnline: props.isOnline ? 1 : 0,
+      scope: props.scope ?? null,
+      expires: msToSecOrNull(props.expires),
+      accessToken: props.accessToken ?? null,
+      userId: props.userId ?? null,
+      firstName: props.firstName ?? null,
+      lastName: props.lastName ?? null,
+      email: props.email ?? null,
+      accountOwner: boolOrNullToInt(props.accountOwner),
+      locale: props.locale ?? null,
+      collaborator: boolOrNullToInt(props.collaborator),
+      emailVerified: boolOrNullToInt(props.emailVerified),
+      refreshToken: props.refreshToken ?? null,
+      refreshTokenExpires: msToSecOrNull(props.refreshTokenExpires),
+    })),
+    encode: SchemaGetter.transform((row) => ({
+      id: row.id,
+      shop: row.shop,
+      state: row.state,
+      isOnline: row.isOnline !== 0,
+      scope: row.scope ?? undefined,
+      expires: secToMsOrUndefined(row.expires),
+      accessToken: row.accessToken ?? undefined,
+      userId: row.userId ?? undefined,
+      firstName: row.firstName ?? undefined,
+      lastName: row.lastName ?? undefined,
+      email: row.email ?? undefined,
+      accountOwner: intOrNullToBool(row.accountOwner),
+      locale: row.locale ?? undefined,
+      collaborator: intOrNullToBool(row.collaborator),
+      emailVerified: intOrNullToBool(row.emailVerified),
+      refreshToken: row.refreshToken ?? undefined,
+      refreshTokenExpires: secToMsOrUndefined(row.refreshTokenExpires),
+    })),
+  }),
 );
+
+const sessionToRow = (session: ShopifyApi.Session) =>
+  tryShopify(() =>
+    Schema.decodeUnknownSync(ShopifySessionFromApiProps)(
+      Object.fromEntries(session.toPropertyArray(true)),
+    ),
+  );
+
+const rowToSession = (row: Domain.ShopifySession) =>
+  tryShopify(() => {
+    const props = Schema.encodeSync(ShopifySessionFromApiProps)(row);
+    return ShopifyApi.Session.fromPropertyArray(
+      Object.entries(props).filter(
+        (entry): entry is [string, string | number | boolean] => entry[1] !== undefined,
+      ),
+      true,
+    );
+  });
 
 const setShopifyDocumentHeaders = (headers: Headers, shop: string) => {
   headers.set(
@@ -184,14 +241,12 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     const storeSession = Effect.fn("Shopify.storeSession")(function* (
       session: ShopifyApi.Session,
     ) {
-      yield* repository.upsertShopifySession(session);
+      yield* sessionToRow(session).pipe(Effect.flatMap(repository.upsertShopifySession));
     });
     const loadSession = Effect.fn("Shopify.loadSession")(function* (id: string) {
       const row = yield* repository.findShopifySessionById(id);
-      if (Option.isNone(row)) {
-        return Option.none();
-      }
-      return yield* decodeSessionPayload(row.value.payload).pipe(
+      if (Option.isNone(row)) return Option.none();
+      return yield* rowToSession(row.value).pipe(
         Effect.map(Option.some),
         Effect.catchTag("ShopifyError", () => Effect.succeed(Option.none())),
       );
@@ -203,24 +258,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     );
     const updateSessionScope = Effect.fn("Shopify.updateSessionScope")(
       function* ({ id, scope }: { id: string; scope: string }) {
-        const row = yield* repository.findShopifySessionById(id);
-        if (Option.isNone(row)) {
-          return;
-        }
-        const sessionOption = yield* decodeSessionPayload(
-          row.value.payload,
-        ).pipe(
-          Effect.map(Option.some),
-          Effect.catchTag("ShopifyError", () => Effect.succeed(Option.none())),
-        );
-        if (Option.isNone(sessionOption)) {
-          return;
-        }
-        sessionOption.value.scope = scope;
-        yield* repository.updateShopifySessionPayload({
-          id,
-          payload: sessionOption.value.toPropertyArray(true),
-        });
+        yield* repository.updateShopifySessionScope(id, scope);
       },
     );
     /**
