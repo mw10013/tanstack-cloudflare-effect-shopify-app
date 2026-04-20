@@ -775,7 +775,7 @@ But not:
 
 ## Recommended Internal Architecture
 
-For this repo, I would recommend an internal architecture that mirrors the useful capabilities of `SessionStorage` without making it the core abstraction.
+Two layers only: Repository and Shopify.
 
 ### 1. Flat row schema in Domain
 
@@ -822,30 +822,20 @@ Repository should expose D1-shaped operations, for example:
 
 This keeps Repository free of Shopify auth workflow decisions.
 
-### 3. Effect-native session store service
+No separate session-store service. Shopify owns session lifecycle directly.
 
-Add or evolve an Effect service on top of Repository whose job is Shopify session persistence semantics.
+### 3. Shopify owns both session persistence and auth workflow
 
-Suggested responsibilities:
+`src/lib/Shopify.ts` continues to own everything above Repository.
 
-- `storeSession(session: ShopifyApi.Session)`
-- `loadSession(id: string)`
-- `findSessionsByShop(shop: string)`
-- `deleteSession(id: string)`
-- `deleteSessionsByShop(shop: string)`
-- `deleteSessions(ids: ReadonlyArray<string>)`
+Session persistence methods (keep on Shopify, not extracted):
 
-Internally this service would:
+- `storeSession(session: ShopifyApi.Session)` — converts to flat row, calls `upsertShopifySession`
+- `loadSession(id: string)` — reads flat row, converts seconds back to ms, calls `Session.fromPropertyArray`
+- `deleteSessionsByShop(shop: string)` — delegates to Repository
+- `updateSessionScope({ id, scope })` — targeted UPDATE via Repository, no load required
 
-- convert `ShopifyApi.Session` to a flat row
-- convert flat rows back via `Session.fromPropertyArray(Object.entries(row), true)`
-- handle seconds ↔ milliseconds conversion for expiry fields
-
-This gives the useful semantics of Shopify's `SessionStorage` interface, but in an Effect-native service.
-
-### 4. Shopify auth service stays workflow-oriented
-
-The higher-level Shopify service should own behaviors like:
+Auth workflow methods (unchanged in shape):
 
 - derive offline session id from shop
 - load current session for request
@@ -854,7 +844,7 @@ The higher-level Shopify service should own behaviors like:
 - delete all sessions for a shop on uninstall
 - patch scope on `app/scopes_update`
 
-Those are not merely storage concerns, so they belong above Repository.
+Internally, the serde boundary lives inside the `storeSession` / `loadSession` pair in Shopify, not in a separate service. `Repository` only sees flat primitive rows.
 
 ## Sketch For This Repo
 
@@ -864,7 +854,7 @@ This is not final API design, but it is the shape I would start moving toward.
 
 `src/lib/Domain.ts`
 
-Add a flat row schema, something conceptually like:
+Replace the current blob-based `ShopifySession` with a flat row schema:
 
 ```ts
 export const ShopifySession = Schema.Struct({
@@ -888,7 +878,9 @@ export const ShopifySession = Schema.Struct({
 })
 ```
 
-The exact `NullOr` vs optional choice should follow what D1 actually returns.
+Remove `ShopifySessionPayload`. No JSON blob columns remain.
+
+The exact `NullOr` vs optional choice should follow what D1 actually returns for nullable columns.
 
 ### Repository
 
@@ -905,55 +897,43 @@ deleteShopifySessionsByIds(ids)
 deleteShopifySessionsByShop(shop)
 ```
 
-At this layer, no `ShopifyApi.Session` construction yet.
+At this layer, no `ShopifyApi.Session` construction — only flat primitive row values.
 
-### Session Store Service
+Remove `updateShopifySessionPayload`. Scope updates will use a targeted query at this layer.
 
-Could live in `src/lib/ShopifySessionStore.ts` or remain as a smaller focused part of `src/lib/Shopify.ts`.
+### Shopify
 
-Suggested shape:
+`src/lib/Shopify.ts` owns both persistence semantics and auth workflow directly.
+
+Session persistence (private to the service):
 
 ```ts
-storeSession(session: ShopifyApi.Session)
-loadSession(id: string): Effect<_, _, Option.Option<ShopifyApi.Session>>
-findSessionsByShop(shop: string): Effect<_, _, ReadonlyArray<ShopifyApi.Session>>
-deleteSession(id: string)
-deleteSessions(ids: ReadonlyArray<string>)
-deleteSessionsByShop(shop: string)
+const storeSession = (session: ShopifyApi.Session) =>
+  // toPropertyArray → map into flat columns → upsertShopifySession
+
+const loadSession = (id: string) =>
+  // findShopifySessionById → multiply expiry seconds by 1000 → Session.fromPropertyArray
 ```
 
-Implementation notes:
-
-- use SQLite adapter conventions for timestamps
-- use Shopify's own field names
-- use `Session.fromPropertyArray(..., true)` as hydration authority
-- use `session.toPropertyArray(true)` as the serialization authority, but map that into columns instead of storing the array blob
-
-### Shopify Auth Service
-
-Then `src/lib/Shopify.ts` can focus on auth flow and context building.
-
-Conceptually:
+Auth workflow (unchanged in shape):
 
 ```ts
-const existingSession = yield* sessionStore.loadSession(sessionId)
+const existingSession = yield* loadSession(sessionId)
 
 if (Option.isSome(existingSession) && existingSession.value.isActive(...)) {
   return buildAdminContext(shopify, existingSession.value)
 }
 
 const { session } = yield* tokenExchange(...)
-yield* sessionStore.storeSession(session)
+yield* storeSession(session)
 return buildAdminContext(shopify, session)
 ```
-
-This is much closer to TanStack Start + Effect style than a Promise-based interface pushed everywhere.
 
 ### Optional Compatibility Adapter
 
 Only if ever needed, add a tiny boundary adapter implementing Shopify's `SessionStorage` interface.
 
-That adapter would wrap the Effect-native session store and expose:
+That adapter would wrap Repository-level ops and expose:
 
 - `storeSession`
 - `loadSession`
@@ -1064,8 +1044,8 @@ So if we want to move this repo toward Shopify-native session semantics, the dir
 2. Keep `id` exactly in Shopify's official formats.
 3. Model offline and online rows in the same table.
 4. Use SQLite-style integer timestamps for expiry fields.
-5. Keep Repository as a low-level D1 row layer.
-6. Put Shopify session lifecycle in an Effect-native service above Repository.
+5. Keep Repository as a low-level D1 row layer with no `ShopifyApi.Session` knowledge.
+6. Put session serde and lifecycle directly in Shopify (no separate session-store service).
 7. Hydrate/dehydrate through Shopify's `Session` helpers instead of making our JSON blob the source of truth.
 8. Delete all sessions for a shop on `app/uninstalled`.
 9. Only add a literal `SessionStorage` adapter later if an external Shopify package truly requires it.
