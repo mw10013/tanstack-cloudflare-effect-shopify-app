@@ -263,7 +263,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       },
     );
     const updateSessionScope = Effect.fn("Shopify.updateSessionScope")(
-      function* ({ id, scope }: { id: Domain.ShopifySessionId; scope: Domain.ShopifySession["scope"] }) {
+      function* ({ id, scope }: Pick<Domain.ShopifySession, "id" | "scope">) {
         yield* repository.updateShopifySessionScope(id, scope);
       },
     );
