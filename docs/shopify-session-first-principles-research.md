@@ -813,9 +813,9 @@ with D1/SQLite-friendly scalar types.
 
 Repository should expose D1-shaped operations, for example:
 
-- `findShopifySessionRowById(id)`
-- `findShopifySessionRowsByShop(shop)`
-- `upsertShopifySessionRow(row)`
+- `findShopifySessionById(id)`
+- `findShopifySessionsByShop(shop)`
+- `upsertShopifySession(row)`
 - `deleteShopifySessionById(id)`
 - `deleteShopifySessionsByShop(shop)`
 - `deleteShopifySessionsByIds(ids)`
@@ -867,7 +867,7 @@ This is not final API design, but it is the shape I would start moving toward.
 Add a flat row schema, something conceptually like:
 
 ```ts
-export const ShopifySessionRow = Schema.Struct({
+export const ShopifySession = Schema.Struct({
   id: ShopifySessionId,
   shop: ShopDomain,
   state: Schema.String,
@@ -897,9 +897,9 @@ The exact `NullOr` vs optional choice should follow what D1 actually returns.
 Move toward methods like:
 
 ```ts
-findShopifySessionRowById(id)
-findShopifySessionRowsByShop(shop)
-upsertShopifySessionRow(row)
+findShopifySessionById(id)
+findShopifySessionsByShop(shop)
+upsertShopifySession(row)
 deleteShopifySessionById(id)
 deleteShopifySessionsByIds(ids)
 deleteShopifySessionsByShop(shop)
