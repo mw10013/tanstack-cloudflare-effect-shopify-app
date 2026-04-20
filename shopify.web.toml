@@ -17,4 +17,4 @@ port = 3200
 #   `set -a && source .env && set +a`.
 # - Plain `source .env` loads shell vars but does not export them to child processes,
 #   so Vite/Cloudflare runtime may miss SHOPIFY_API_KEY/SHOPIFY_API_SECRET/PORT.
-dev = "env CLOUDFLARE_INCLUDE_PROCESS_ENV=true pnpm --dir .. dev"
+dev = "env CLOUDFLARE_INCLUDE_PROCESS_ENV=true pnpm dev"

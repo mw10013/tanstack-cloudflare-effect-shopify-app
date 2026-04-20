@@ -1,0 +1,5 @@
+# Declaring a workspace causes shopify CLI to set usesWorkspaces=true, which skips
+# its install step that globs **/package.json (depth 3) and runs `pnpm install` in
+# each — including refs/cloudflare-docs, whose preinstall rejects non-npm package managers.
+packages:
+  - "."
