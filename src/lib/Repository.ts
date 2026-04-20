@@ -54,7 +54,7 @@ export class Repository extends Context.Service<Repository>()("Repository", {
       },
     );
     const upsertSession = Effect.fn("Repository.upsertSession")(
-      function* (row: Domain.Session) {
+      function* (session: Domain.Session) {
         yield* d1.run(
           d1
             .prepare(
@@ -79,23 +79,23 @@ on conflict(id) do update set
   refreshTokenExpires = excluded.refreshTokenExpires`,
             )
             .bind(
-              row.id,
-              row.shop,
-              row.state,
-              row.isOnline,
-              row.scope,
-              row.expires,
-              row.accessToken,
-              row.userId,
-              row.firstName,
-              row.lastName,
-              row.email,
-              row.accountOwner,
-              row.locale,
-              row.collaborator,
-              row.emailVerified,
-              row.refreshToken,
-              row.refreshTokenExpires,
+              session.id,
+              session.shop,
+              session.state,
+              session.isOnline,
+              session.scope,
+              session.expires,
+              session.accessToken,
+              session.userId,
+              session.firstName,
+              session.lastName,
+              session.email,
+              session.accountOwner,
+              session.locale,
+              session.collaborator,
+              session.emailVerified,
+              session.refreshToken,
+              session.refreshTokenExpires,
             ),
         );
       },
