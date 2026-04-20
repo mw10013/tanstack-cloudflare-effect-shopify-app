@@ -5,14 +5,14 @@ export const ShopifySessionId = Schema.NonEmptyString.pipe(
 );
 export type ShopifySessionId = typeof ShopifySessionId.Type;
 
-export const ShopDomain = Schema.NonEmptyString.pipe(
-  Schema.brand("ShopDomain"),
+export const Shop = Schema.NonEmptyString.pipe(
+  Schema.brand("Shop"),
 );
-export type ShopDomain = typeof ShopDomain.Type;
+export type Shop = typeof Shop.Type;
 
 export const ShopifySession = Schema.Struct({
   id: ShopifySessionId,
-  shop: ShopDomain,
+  shop: Shop,
   state: Schema.String,
   isOnline: Schema.Number,
   scope: Schema.NullOr(Schema.String),

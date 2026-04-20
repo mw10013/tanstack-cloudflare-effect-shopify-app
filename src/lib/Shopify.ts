@@ -255,12 +255,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       );
     });
     const deleteSessionsByShop = Effect.fn("Shopify.deleteSessionsByShop")(
-      function* (shop: string) {
-        const shopDomain = yield* Schema.decodeUnknownEffect(Domain.ShopDomain)(shop).pipe(
-          Effect.mapError((cause) => new ShopifyError({ message: "Invalid shop domain", cause })),
-        );
-        yield* repository.deleteShopifySessionsByShop(shopDomain);
-      },
+      (shop: Domain.ShopifySession["shop"]) => repository.deleteShopifySessionsByShop(shop),
     );
     const updateSessionScope = Effect.fn("Shopify.updateSessionScope")(
       function* ({ id, scope }: Pick<Domain.ShopifySession, "id" | "scope">) {

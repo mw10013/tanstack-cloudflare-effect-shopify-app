@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { WebhookValidationErrorReason } from "@shopify/shopify-api";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
+import * as Domain from "@/lib/Domain";
 import { Request as AppRequest } from "@/lib/Request";
 import { Shopify } from "@/lib/Shopify";
 
@@ -32,7 +33,8 @@ export const Route = createFileRoute("/webhooks/app/uninstalled")({
                 ? new Response("Unauthorized", { status: 401 })
                 : new Response("Bad Request", { status: 400 });
             }
-            yield* shopify.deleteSessionsByShop(result.domain);
+            const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(result.domain);
+            yield* shopify.deleteSessionsByShop(shop);
             return new Response();
           }),
         ),
