@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect, Schema } from "effect";
 
+import * as Domain from "@/lib/Domain";
 import { Request as AppRequest } from "@/lib/Request";
 import { Shopify } from "@/lib/Shopify";
 
@@ -23,8 +24,9 @@ export const Route = createFileRoute("/webhooks/app/scopes_update")({
             const payload = yield* Schema.decodeUnknownEffect(
               ScopesUpdatePayload,
             )(JSON.parse(result.rawBody));
+            const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(result.domain);
             // Webhooks target the offline (shop-level) session; same session type authenticate.webhook() returns in the official library.
-            const id = yield* shopify.offlineSessionId(result.domain);
+            const id = yield* shopify.offlineSessionId(shop);
             yield* shopify.updateSessionScope({
               id,
               scope: payload.current.toString(),

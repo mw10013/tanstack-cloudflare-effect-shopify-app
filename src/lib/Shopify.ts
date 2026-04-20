@@ -243,11 +243,8 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     ) {
       yield* sessionToRow(session).pipe(Effect.flatMap(repository.upsertShopifySession));
     });
-    const loadSession = Effect.fn("Shopify.loadSession")(function* (id: string) {
-      const sessionId = yield* Schema.decodeUnknownEffect(Domain.ShopifySessionId)(id).pipe(
-        Effect.mapError((cause) => new ShopifyError({ message: "Invalid session id", cause })),
-      );
-      const row = yield* repository.findShopifySessionById(sessionId);
+    const loadSession = Effect.fn("Shopify.loadSession")(function* (id: Domain.ShopifySession["id"]) {
+      const row = yield* repository.findShopifySessionById(id);
       if (Option.isNone(row)) return Option.none();
       return yield* rowToSession(row.value).pipe(
         Effect.map(Option.some),
@@ -381,8 +378,10 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         const payload = yield* tryShopifyPromise(() =>
           shopify.session.decodeSessionToken(sessionToken),
         );
-        const sessionShop = new URL(payload.dest).hostname;
-        const sessionId = shopify.session.getOfflineId(sessionShop);
+        const sessionShop = yield* Schema.decodeUnknownEffect(Domain.Shop)(
+          new URL(payload.dest).hostname,
+        ).pipe(Effect.mapError((cause) => new ShopifyError({ message: "Invalid shop domain", cause })));
+        const sessionId = yield* offlineSessionId(sessionShop);
         const existingSession = yield* loadSession(sessionId);
 
         if (
@@ -438,7 +437,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         `https://${adminPath}/oauth/install?client_id=${Redacted.value(config.apiKey)}`,
       );
     });
-    const offlineSessionId = Effect.fn("Shopify.offlineSessionId")(function* (shop: string) {
+    const offlineSessionId = Effect.fn("Shopify.offlineSessionId")(function* (shop: Domain.ShopifySession["shop"]) {
       return yield* Schema.decodeUnknownEffect(Domain.ShopifySessionId)(
         shopify.session.getOfflineId(shop),
       ).pipe(Effect.mapError((cause) => new ShopifyError({ message: "Invalid session id", cause })));
