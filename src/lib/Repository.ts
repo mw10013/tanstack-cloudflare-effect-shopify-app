@@ -71,15 +71,23 @@ on conflict(id) do update set
     });
     const updateShopifySessionPayload = Effect.fn(
       "Repository.updateShopifySessionPayload",
-    )(function* ({ id, payload }: { id: string; payload: string }) {
-      yield* d1.run(
-        d1
-          .prepare(
-            "update ShopifySession set payload = ?1, updatedAt = datetime('now') where id = ?2",
-          )
-          .bind(payload, id),
-      );
-    });
+    )(
+      function* ({
+        id,
+        payload,
+      }: {
+        readonly id: string;
+        readonly payload: typeof Domain.ShopifySessionPayload.Type;
+      }) {
+        yield* d1.run(
+          d1
+            .prepare(
+              "update ShopifySession set payload = ?1, updatedAt = datetime('now') where id = ?2",
+            )
+            .bind(JSON.stringify(payload), id),
+        );
+      },
+    );
     return {
       upsertShopifySession,
       findShopifySessionById,

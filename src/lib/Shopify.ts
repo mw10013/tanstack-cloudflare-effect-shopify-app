@@ -105,34 +105,16 @@ const tryShopifyPromise = <A>(evaluate: () => Promise<A>) =>
  * so all merchants re-authenticate and receive a fresh blob in the current format.
  */
 /**
- * Deserializes a stored session blob back into a `Session` object.
+ * Deserializes a stored session payload back into a `Session` object.
  *
- * The payload is `JSON.stringify(session.toPropertyArray(true))` written by
- * `storeSession`. `fromPropertyArray` accepts `[string, string | number |
- * boolean][]` but coerces every known field internally (via `String()`,
- * `Number()`, `Boolean()`, `new Date()`), so element-level type validation is
- * not needed — unexpected values surface as `InvalidSession` which `tryShopify`
- * catches as `ShopifyError`. Callers treat `ShopifyError` as `Option.none()`,
- * triggering OAuth re-authentication and a fresh blob on the next login.
+ * `Repository` decodes the stored JSON string through `Domain.ShopifySession`,
+ * so this function only needs to hand the validated tuple array to
+ * `Session.fromPropertyArray`. Shopify still owns field coercion and session
+ * hydration semantics.
  */
 const decodeSessionPayload = Effect.fn("Shopify.decodeSessionPayload")(
-  function* (payload: string) {
-    const parsed = yield* tryShopify(() => JSON.parse(payload) as unknown);
-    if (!Array.isArray(parsed)) {
-      return yield* Effect.fail(
-        new ShopifyError({
-          message: "Invalid Shopify session payload",
-          cause: parsed,
-        }),
-      );
-    }
-    return yield* tryShopify(() =>
-      ShopifyApi.Session.fromPropertyArray(
-        parsed as [string, string | number | boolean][],
-        true,
-      ),
-    );
-  },
+  (payload: Parameters<typeof ShopifyApi.Session.fromPropertyArray>[0]) =>
+    tryShopify(() => ShopifyApi.Session.fromPropertyArray(payload, true)),
 );
 
 const setShopifyDocumentHeaders = (headers: Headers, shop: string) => {
@@ -230,7 +212,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         sessionOption.value.scope = scope;
         yield* repository.updateShopifySessionPayload({
           id,
-          payload: JSON.stringify(sessionOption.value.toPropertyArray(true)),
+          payload: sessionOption.value.toPropertyArray(true),
         });
       },
     );
