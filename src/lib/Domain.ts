@@ -10,17 +10,23 @@ export const ShopDomain = Schema.NonEmptyString.pipe(
 );
 export type ShopDomain = typeof ShopDomain.Type;
 
-const ShopifySessionPayloadEntries = Schema.mutable(
-  Schema.Array(
-    Schema.mutable(
-      Schema.Tuple([
-        Schema.String,
-        Schema.Union([Schema.String, Schema.Number, Schema.Boolean]),
-      ]),
-    ),
-  ),
+/**
+ * Canonical in-memory shape for the JSON payload stored in `ShopifySession`.
+ *
+ * The domain model keeps this readonly. Shopify's mutable tuple-array typing is
+ * handled at the integration boundary in `Shopify.ts`.
+ */
+const ShopifySessionPayloadEntries = Schema.Array(
+  Schema.Tuple([
+    Schema.String,
+    Schema.Union([Schema.String, Schema.Number, Schema.Boolean]),
+  ]),
 );
 
+/**
+ * D1 stores the Shopify session payload as a JSON string, but the decoded
+ * domain value is the readonly tuple array representation of that payload.
+ */
 export const ShopifySessionPayload = Schema.fromJsonString(
   ShopifySessionPayloadEntries,
 );

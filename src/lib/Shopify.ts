@@ -2,6 +2,7 @@ import "@shopify/shopify-api/adapters/web-api";
 import * as ShopifyApi from "@shopify/shopify-api";
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 
+import type * as Domain from "@/lib/Domain";
 import { Repository } from "@/lib/Repository";
 
 interface ShopifyConfig {
@@ -109,12 +110,18 @@ const tryShopifyPromise = <A>(evaluate: () => Promise<A>) =>
  *
  * `Repository` decodes the stored JSON string through `Domain.ShopifySession`,
  * so this function only needs to hand the validated tuple array to
- * `Session.fromPropertyArray`. Shopify still owns field coercion and session
- * hydration semantics.
+ * `Session.fromPropertyArray`. The domain payload stays readonly; this function
+ * makes a shallow mutable copy only to satisfy Shopify's mutable tuple-array
+ * signature. Shopify still owns field coercion and session hydration semantics.
  */
 const decodeSessionPayload = Effect.fn("Shopify.decodeSessionPayload")(
-  (payload: Parameters<typeof ShopifyApi.Session.fromPropertyArray>[0]) =>
-    tryShopify(() => ShopifyApi.Session.fromPropertyArray(payload, true)),
+  (payload: Domain.ShopifySessionPayload) =>
+    tryShopify(() =>
+      ShopifyApi.Session.fromPropertyArray(
+        payload.map<[string, string | number | boolean]>(([key, value]) => [key, value]),
+        true,
+      ),
+    ),
 );
 
 const setShopifyDocumentHeaders = (headers: Headers, shop: string) => {
