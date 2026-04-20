@@ -181,7 +181,7 @@ const rowToSession = (row: Domain.ShopifySession) =>
     );
   });
 
-const setShopifyDocumentHeaders = (headers: Headers, shop: string) => {
+const setShopifyDocumentHeaders = (headers: Headers, shop: Domain.Shop) => {
   headers.set(
     "Link",
     `<${CDN_URL}>; rel="preconnect", <${APP_BRIDGE_URL}>; rel="preload"; as="script", <${POLARIS_URL}>; rel="preload"; as="script"`,
@@ -192,7 +192,7 @@ const setShopifyDocumentHeaders = (headers: Headers, shop: string) => {
   );
 };
 
-const buildDocumentResponseHeaders = (shop: string | null) => {
+const buildDocumentResponseHeaders = (shop: Domain.Shop | null) => {
   const headers = new Headers({ "content-type": "text/html;charset=utf-8" });
   if (shop) {
     setShopifyDocumentHeaders(headers, shop);
@@ -200,7 +200,7 @@ const buildDocumentResponseHeaders = (shop: string | null) => {
   return headers;
 };
 
-const renderBouncePage = (apiKey: string, shop: string | null): Response =>
+const renderBouncePage = (apiKey: string, shop: Domain.Shop | null): Response =>
   new Response(
     `<script data-api-key="${apiKey}" src="${APP_BRIDGE_URL}"></script>`,
     { headers: buildDocumentResponseHeaders(shop) },
@@ -208,7 +208,7 @@ const renderBouncePage = (apiKey: string, shop: string | null): Response =>
 
 const renderExitIframePage = (
   apiKey: string,
-  shop: string | null,
+  shop: Domain.Shop | null,
   destination: string,
 ): Response =>
   new Response(
@@ -281,7 +281,8 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
           return response;
         }
         const shopParam = new URL(request.url).searchParams.get("shop");
-        const shop = shopParam ? shopify.utils.sanitizeShop(shopParam) : null;
+        const sanitizedShop = shopParam ? shopify.utils.sanitizeShop(shopParam) : null;
+        const shop = sanitizedShop !== null ? Schema.decodeUnknownSync(Domain.Shop)(sanitizedShop) : null;
         if (!shop) {
           return response;
         }
@@ -319,9 +320,8 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         const url = new URL(request.url);
         const shopParam = url.searchParams.get("shop");
         const hostParam = url.searchParams.get("host");
-        const shop = shopParam
-          ? shopify.utils.sanitizeShop(shopParam, true)
-          : null;
+        const sanitizedShop = shopParam ? shopify.utils.sanitizeShop(shopParam, true) : null;
+        const shop = sanitizedShop !== null ? Schema.decodeUnknownSync(Domain.Shop)(sanitizedShop) : null;
         const host = hostParam ? shopify.utils.sanitizeHost(hostParam) : null;
 
         if (url.pathname.endsWith("/auth/session-token")) {
