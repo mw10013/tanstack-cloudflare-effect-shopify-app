@@ -244,7 +244,10 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       yield* sessionToRow(session).pipe(Effect.flatMap(repository.upsertShopifySession));
     });
     const loadSession = Effect.fn("Shopify.loadSession")(function* (id: string) {
-      const row = yield* repository.findShopifySessionById(id);
+      const sessionId = yield* Schema.decodeUnknownEffect(Domain.ShopifySessionId)(id).pipe(
+        Effect.mapError((cause) => new ShopifyError({ message: "Invalid session id", cause })),
+      );
+      const row = yield* repository.findShopifySessionById(sessionId);
       if (Option.isNone(row)) return Option.none();
       return yield* rowToSession(row.value).pipe(
         Effect.map(Option.some),
@@ -253,12 +256,18 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     });
     const deleteSessionsByShop = Effect.fn("Shopify.deleteSessionsByShop")(
       function* (shop: string) {
-        yield* repository.deleteShopifySessionsByShop(shop);
+        const shopDomain = yield* Schema.decodeUnknownEffect(Domain.ShopDomain)(shop).pipe(
+          Effect.mapError((cause) => new ShopifyError({ message: "Invalid shop domain", cause })),
+        );
+        yield* repository.deleteShopifySessionsByShop(shopDomain);
       },
     );
     const updateSessionScope = Effect.fn("Shopify.updateSessionScope")(
       function* ({ id, scope }: { id: string; scope: string }) {
-        yield* repository.updateShopifySessionScope(id, scope);
+        const sessionId = yield* Schema.decodeUnknownEffect(Domain.ShopifySessionId)(id).pipe(
+          Effect.mapError((cause) => new ShopifyError({ message: "Invalid session id", cause })),
+        );
+        yield* repository.updateShopifySessionScope(sessionId, scope);
       },
     );
     /**
