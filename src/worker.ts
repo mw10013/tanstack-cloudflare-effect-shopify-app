@@ -6,6 +6,7 @@ import * as Exit from "effect/Exit";
 import { D1 } from "@/lib/D1";
 import { KV } from "@/lib/KV";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
+import { Repository } from "@/lib/Repository";
 import { Request as AppRequest } from "@/lib/Request";
 import { Shopify } from "@/lib/Shopify";
 
@@ -44,16 +45,18 @@ const makeRunEffect = (env: Env, request: Request) => {
   const envLayer = makeEnvLayer(env);
   const d1Layer = Layer.provideMerge(D1.layer, envLayer);
   const kvLayer = Layer.provideMerge(KV.layer, envLayer);
+  const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
   const requestLayer = Layer.succeedContext(
     Context.make(AppRequest, request),
   );
   const shopifyLayer = Layer.provideMerge(
     Shopify.layer,
-    Layer.merge(d1Layer, requestLayer),
+    Layer.merge(repositoryLayer, requestLayer),
   );
   const runtimeLayer = Layer.mergeAll(
     d1Layer,
     kvLayer,
+    repositoryLayer,
     shopifyLayer,
     requestLayer,
     makeLoggerLayer(env),

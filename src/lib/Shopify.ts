@@ -2,7 +2,7 @@ import "@shopify/shopify-api/adapters/web-api";
 import * as ShopifyApi from "@shopify/shopify-api";
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 
-import { D1 } from "@/lib/D1";
+import { Repository } from "@/lib/Repository";
 
 interface ShopifyConfig {
   readonly apiKey: Redacted.Redacted;
@@ -189,35 +189,16 @@ const buildAdminContext = (
 
 export class Shopify extends Context.Service<Shopify>()("Shopify", {
   make: Effect.gen(function* () {
-    const d1 = yield* D1;
+    const repository = yield* Repository;
     const config = yield* shopifyConfig;
     const shopify = makeShopifyApi(config);
     const storeSession = Effect.fn("Shopify.storeSession")(function* (
       session: ShopifyApi.Session,
     ) {
-      yield* d1.run(
-        d1
-          .prepare(
-            `
-insert into ShopifySession (id, shop, payload)
-values (?1, ?2, ?3)
-on conflict(id) do update set
-  shop = excluded.shop,
-  payload = excluded.payload,
-  updatedAt = datetime('now')
-`,
-          )
-          .bind(
-            session.id,
-            session.shop,
-            JSON.stringify(session.toPropertyArray(true)),
-          ),
-      );
+      yield* repository.upsertShopifySession(session);
     });
     const loadSession = Effect.fn("Shopify.loadSession")(function* (id: string) {
-      const row = yield* d1.first<{ payload: string }>(
-        d1.prepare("select payload from ShopifySession where id = ?1").bind(id),
-      );
+      const row = yield* repository.findShopifySessionById(id);
       if (Option.isNone(row)) {
         return Option.none();
       }
@@ -228,16 +209,12 @@ on conflict(id) do update set
     });
     const deleteSessionsByShop = Effect.fn("Shopify.deleteSessionsByShop")(
       function* (shop: string) {
-        yield* d1.run(
-          d1.prepare("delete from ShopifySession where shop = ?1").bind(shop),
-        );
+        yield* repository.deleteShopifySessionsByShop(shop);
       },
     );
     const updateSessionScope = Effect.fn("Shopify.updateSessionScope")(
       function* ({ id, scope }: { id: string; scope: string }) {
-        const row = yield* d1.first<{ payload: string }>(
-          d1.prepare("select payload from ShopifySession where id = ?1").bind(id),
-        );
+        const row = yield* repository.findShopifySessionById(id);
         if (Option.isNone(row)) {
           return;
         }
@@ -251,16 +228,10 @@ on conflict(id) do update set
           return;
         }
         sessionOption.value.scope = scope;
-        yield* d1.run(
-          d1
-            .prepare(
-              "update ShopifySession set payload = ?1, updatedAt = datetime('now') where id = ?2",
-            )
-            .bind(
-              JSON.stringify(sessionOption.value.toPropertyArray(true)),
-              id,
-            ),
-        );
+        yield* repository.updateShopifySessionPayload({
+          id,
+          payload: JSON.stringify(sessionOption.value.toPropertyArray(true)),
+        });
       },
     );
     /**
