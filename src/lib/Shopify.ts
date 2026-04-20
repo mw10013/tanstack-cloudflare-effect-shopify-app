@@ -263,11 +263,8 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       },
     );
     const updateSessionScope = Effect.fn("Shopify.updateSessionScope")(
-      function* ({ id, scope }: { id: string; scope: string }) {
-        const sessionId = yield* Schema.decodeUnknownEffect(Domain.ShopifySessionId)(id).pipe(
-          Effect.mapError((cause) => new ShopifyError({ message: "Invalid session id", cause })),
-        );
-        yield* repository.updateShopifySessionScope(sessionId, scope);
+      function* ({ id, scope }: { id: Domain.ShopifySessionId; scope: Domain.ShopifySession["scope"] }) {
+        yield* repository.updateShopifySessionScope(id, scope);
       },
     );
     /**
@@ -446,8 +443,11 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         `https://${adminPath}/oauth/install?client_id=${Redacted.value(config.apiKey)}`,
       );
     });
-    const offlineSessionId = (shop: string) =>
-      Effect.succeed(shopify.session.getOfflineId(shop));
+    const offlineSessionId = Effect.fn("Shopify.offlineSessionId")(function* (shop: string) {
+      return yield* Schema.decodeUnknownEffect(Domain.ShopifySessionId)(
+        shopify.session.getOfflineId(shop),
+      ).pipe(Effect.mapError((cause) => new ShopifyError({ message: "Invalid session id", cause })));
+    });
     return {
       config,
       authenticateAdmin,
