@@ -12,10 +12,10 @@ cp .env.example .env
 pnpm d1:reset
 
 # first time
+shopify app dev --reset
 #  - Create this project as a new app on Shopify? y
 #  - App name: tanstack-cloudflare-effect-app
 #  - Configuration file name: tanstack-cloudflare-effect-app
-shopify app dev --reset
 
 # otherwise
 shopify app dev
