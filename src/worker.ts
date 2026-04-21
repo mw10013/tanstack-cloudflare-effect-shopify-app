@@ -105,8 +105,6 @@ const makeRunEffect = (env: Env, request: Request) => {
  *   https://tanstack.com/start/latest/docs/framework/react/guide/server-entry-point#request-context
  */
 export interface ServerContext {
-  env: Env;
-  request: Request;
   runEffect: ReturnType<typeof makeRunEffect>;
 }
 
@@ -125,8 +123,6 @@ export default {
           try: async () =>
             serverEntry.fetch(request, {
               context: {
-                env,
-                request,
                 runEffect,
               },
             }),
