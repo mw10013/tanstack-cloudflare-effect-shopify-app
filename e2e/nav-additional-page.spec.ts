@@ -9,6 +9,11 @@ test("nav to additional page renders heading", async ({ page }) => {
 
   const outsideLink = page.getByRole("link", { name: "Additional page" });
   await expect(outsideLink).toBeVisible();
+  // In Shopify admin chrome, this link can be under an ancestor with
+  // aria-disabled="true" even when it appears clickable to humans.
+  // Playwright actionability treats descendants of aria-disabled ancestors as
+  // disabled, so locator.click()/toBeEnabled() can fail. Trigger a native DOM
+  // click on the link element after visibility check.
   await outsideLink.evaluate((element) => {
     (element as HTMLAnchorElement).click();
   });
