@@ -36,6 +36,12 @@ const POLARIS_URL = "https://cdn.shopify.com/shopifycloud/polaris.js";
 const CDN_URL = "https://cdn.shopify.com";
 const WITHIN_MILLISECONDS_OF_EXPIRY = 5 * 60 * 1000;
 
+/**
+ * Local `shopify app dev` injects `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, and
+ * `HOST`/`APP_URL` into the `shopify.web.toml` dev process. This repo relies on
+ * that injection for local dev, so `.env` should not define blank placeholders
+ * for those keys because `pnpm dev` sources `.env` into the shell first.
+ */
 const shopifyConfig = Config.all({
   apiKey: Config.nonEmptyString("SHOPIFY_API_KEY").pipe(
     Config.map(Redacted.make),
