@@ -4,6 +4,16 @@ import { Effect } from "effect";
 import { Request as AppRequest } from "@/lib/Request";
 import { Shopify } from "@/lib/Shopify";
 
+/**
+ * Shopify OAuth login entry point. Intentionally a pure server-route (no React component).
+ *
+ * Why not a component: this page submits a plain HTML form with no client-side
+ * routing or React state — TanStack SSR/hydration would be pure overhead. Polaris
+ * web components work without React.
+ *
+ * Why not redirect on error: returning the error inline in the POST response avoids
+ * an extra round-trip (POST → redirect → GET) that the search-param approach requires.
+ */
 const renderLoginPage = (error?: string) => `<!doctype html>
 <html lang="en">
   <head>
