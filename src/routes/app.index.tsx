@@ -2,42 +2,40 @@ import * as React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
+import * as Domain from "@/lib/Domain";
 import { Request as AppRequest } from "@/lib/Request";
 import { Shopify } from "@/lib/Shopify";
 
-interface GeneratedVariant {
-  readonly id: string;
-  readonly price: string;
-  readonly barcode: string | null;
-  readonly createdAt: string;
-}
+const ShopifyErrors = Schema.optional(
+  Schema.Array(Schema.Struct({ message: Schema.String })),
+);
 
-interface GeneratedProduct {
-  readonly id: string;
-  readonly title: string;
-  readonly handle: string;
-  readonly status: string;
-  readonly variants: {
-    readonly edges: readonly {
-      readonly node: GeneratedVariant;
-    }[];
-  };
-}
+const ProductCreateResponse = Schema.Struct({
+  data: Schema.optional(
+    Schema.Struct({
+      productCreate: Schema.optional(
+        Schema.Struct({ product: Schema.optional(Domain.Product) }),
+      ),
+    }),
+  ),
+  errors: ShopifyErrors,
+});
 
-interface ShopifyGraphqlResponse<TData> {
-  readonly data?: TData;
-  readonly errors?: readonly { readonly message: string }[];
-}
-
-interface GenerateProductResult {
-  readonly product: GeneratedProduct;
-  readonly variant: readonly GeneratedVariant[];
-}
+const ProductVariantsBulkUpdateResponse = Schema.Struct({
+  data: Schema.optional(
+    Schema.Struct({
+      productVariantsBulkUpdate: Schema.optional(
+        Schema.Struct({ productVariants: Schema.optional(Schema.Array(Domain.ProductVariant)) }),
+      ),
+    }),
+  ),
+  errors: ShopifyErrors,
+});
 
 const generateProduct = createServerFn({ method: "POST" }).handler(
-  ({ context: { runEffect } }): Promise<GenerateProductResult> =>
+  ({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
         const shopify = yield* Shopify;
@@ -81,16 +79,7 @@ const generateProduct = createServerFn({ method: "POST" }).handler(
         );
         const productCreateJson = yield* Effect.tryPromise(
           () => productCreateResponse.json(),
-        ).pipe(
-          Effect.map(
-            (json) =>
-              json as ShopifyGraphqlResponse<{
-                readonly productCreate?: {
-                  readonly product?: GeneratedProduct;
-                };
-              }>,
-          ),
-        );
+        ).pipe(Effect.flatMap(Schema.decodeUnknownEffect(ProductCreateResponse)));
         const product = productCreateJson.data?.productCreate?.product;
         if (!product) {
           return yield* Effect.fail(
@@ -124,16 +113,7 @@ const generateProduct = createServerFn({ method: "POST" }).handler(
         );
         const productVariantsBulkUpdateJson = yield* Effect.tryPromise(
           () => productVariantsBulkUpdateResponse.json(),
-        ).pipe(
-          Effect.map(
-            (json) =>
-              json as ShopifyGraphqlResponse<{
-                readonly productVariantsBulkUpdate?: {
-                  readonly productVariants?: readonly GeneratedVariant[];
-                };
-              }>,
-          ),
-        );
+        ).pipe(Effect.flatMap(Schema.decodeUnknownEffect(ProductVariantsBulkUpdateResponse)));
 
         const variant =
           productVariantsBulkUpdateJson.data?.productVariantsBulkUpdate
@@ -160,7 +140,7 @@ function AppIndex() {
   const shopify = useAppBridge();
   const hasHydrated = useHydrated();
   const [isLoading, setIsLoading] = React.useState(false);
-  const [result, setResult] = React.useState<GenerateProductResult | null>(null);
+  const [result, setResult] = React.useState<Awaited<ReturnType<typeof generateProduct>> | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
