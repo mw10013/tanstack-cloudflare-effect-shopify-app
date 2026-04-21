@@ -1,138 +1,85 @@
-# App Bridge nav testing research
+# App Bridge nav testing research (updated)
 
-## TL;DR
+## Scope
 
-You are seeing two different nav surfaces, not one superimposed element.
+This note captures what we could actually verify about Shopify App Bridge nav behavior in this repo, plus stable testing workarounds.
 
-- Outside link: Shopify admin chrome nav (outside iframe), mirrored from App Bridge nav config.
-- Inside link: regular app content link inside the iframe page body.
-- In this env, the outside sidebar `Additional page` link is often exposed as disabled in the accessibility tree, while the inside link is enabled.
-- That is why Playwright `toBeEnabled()` fails on outside link but route navigation still works via inside link.
+## Confirmed facts
 
-## Grounded facts from this repo + refs
+1. App nav in Shopify admin is outside iframe; app content is inside iframe.
+   - `refs/shopify-docs/docs/api/app-home.md:42`
+   - `refs/shopify-docs/docs/api/app-home.md:44`
+   - `refs/shopify-docs/docs/api/app-home.md:113`
 
-### 1) Shopify app runs in an iframe, App Bridge controls outside UI
+2. Our outside nav is declared in `s-app-nav`.
+   - `src/routes/app.tsx:110`
 
-From Shopify docs:
+3. The "inside" link is separate page content, not the same element as outside sidebar link.
+   - `src/routes/app.index.tsx:211`
 
-> "The App Home area in Shopify admin is implemented as an iframe." (`refs/shopify-docs/docs/api/app-home.md:42`)
+4. App Bridge navigation is bridged through `shopify:navigate` listener in app provider.
+   - `src/components/AppProvider.tsx:18`
+   - ref parity: `refs/shopify-app-js/packages/apps/shopify-app-react-router/src/react/components/AppProvider/AppProvider.tsx:125`
 
-> "Use App Bridge ... to add UI elements such as title bars and navigation menus to other parts of Shopify admin outside the app's iframe." (`refs/shopify-docs/docs/api/app-home.md:44`)
+## What we observed directly (local probes)
 
-> "With App Bridge web components you can add UI elements like title bars and navigation menus to the main Shopify admin area outside of your app's iframe." (`refs/shopify-docs/docs/api/app-home.md:113`)
+1. The outside `Additional page` anchor is visible and has normal link attrs.
+2. A higher ancestor has `aria-disabled="true"` (observed repeatedly).
+3. That ancestor stayed `aria-disabled="true"` for 60s in sampling.
+4. Playwright `toBeEnabled()` fails on this locator due to actionability rules.
+   - Playwright rule: descendant of `[aria-disabled=true]` is considered disabled.
+   - `refs/playwright/docs/src/actionability.md:101`
+5. Human-like automation click by coordinates on the link area did not navigate in this run.
+6. Native DOM click via `evaluate((el) => el.click())` did navigate in this run.
 
-### 2) Your app defines App Bridge nav in layout route
+## Why Playwright blocks `locator.click()`
 
-`src/routes/app.tsx:110`:
+Playwright enabled check is strict:
 
-```tsx
-<s-app-nav>
-  <s-link href={`/app${searchStr}`}>Home</s-link>
-  <s-link href={`/app/additional${searchStr}`}>Additional page</s-link>
-</s-app-nav>
-```
+- "Element is considered enabled when it is not disabled" (`refs/playwright/docs/src/actionability.md:96`)
+- disabled includes descendants of `[aria-disabled=true]` (`refs/playwright/docs/src/actionability.md:101`)
 
-This is same pattern as Shopify template (`refs/shopify-app-template/app/routes/app.tsx:20`).
+So a link can look clickable to a user, while Playwright rejects actionability on that node.
 
-### 3) Your app also has a normal in-page link inside iframe content
+## Web evidence: similar Shopify nav instability exists
 
-`src/routes/app.index.tsx:211`:
+Not the exact same `aria-disabled` report, but many reports of App Bridge nav regressions/host-shell changes:
 
-```tsx
-<s-link href="/app/additional">additional page in the app nav</s-link>
-```
+- `ui-nav-menu` links stop navigating: https://community.shopify.dev/t/ui-nav-menu-just-stopped-working/32671
+- root-path nav bug affecting many apps: https://community.shopify.dev/t/embedded-app-navigation-bug-on-root-path-affects-all-apps/13723
+- first item disappeared/merged with app name: https://community.shopify.dev/t/app-navigation-menu-link-disappeared-first-link-merged-with-app-name/21870
+- first item not displayed: https://community.shopify.dev/t/shopify-admin-not-displaying-the-first-item-in-ui-nav-menu/21846
+- `s-app-nav`/`s-link` behavior regressions and CDN fixes: https://community.shopify.dev/t/s-link-in-s-app-nav-not-working-after-adding-polaris-js/23567
+- sidebar not updating reactively in some setups: https://community.shopify.dev/t/is-the-apps-left-sidebar-no-longer-updated-with-ui-nav-menu/28703
 
-This is a normal page-body link rendered inside iframe content.
+Conclusion: host-side nav behavior does regress and vary by rollout/store/runtime. Our local `aria-disabled` finding is consistent with that instability, but not officially documented as intended behavior.
 
-### 4) App Bridge navigation is event-bridged
+## Workarounds we use
 
-Your `AppProvider` listens for `shopify:navigate` and routes with TanStack:
+1. For route behavior tests, prefer iframe route interactions and assertions.
+2. For outside nav integration, assert presence + href contract separately.
+3. If outside nav click is required in this env:
+   - wait visible on outside link
+   - trigger native click via `evaluate((el) => (el as HTMLAnchorElement).click())`
+   - do not gate on `toBeEnabled()` for this specific outside locator
 
-`src/components/AppProvider.tsx:18` and `src/components/AppProvider.tsx:14`.
+Current test implementation:
 
-This matches Shopify's react-router provider implementation in refs (`refs/shopify-app-js/packages/apps/shopify-app-react-router/src/react/components/AppProvider/AppProvider.tsx:125`).
+- `e2e/nav-additional-page.spec.ts:10`
 
-### 5) The failed run shows outside nav link disabled, inside link enabled
+## What not to rely on
 
-From Playwright error context:
+1. Waiting for outside `Generate a product` button as nav readiness signal.
+   - It proves page shell readiness, not outside nav actionability.
+2. Assuming `force: true` equals reliable navigation.
+   - In our run, `force: true` click still did not navigate to additional page.
 
-- Outside sidebar: `link "Additional page" [disabled]` (`playwright/test-results/nav-additional-page-nav-to-additional-page-renders-heading-e2e/error-context.md:167`)
-- Outside title bar button is enabled/visible (`...error-context.md:205`)
-- Inside iframe link exists: `link "additional page in the app nav"` (`...error-context.md:226`)
+## Minimal debug checklist
 
-So readiness of the outside title bar button does not imply outside sidebar nav link is enabled.
-
-### 6) Why Playwright fails fast on that link
-
-Playwright actionability rules:
-
-> "Element is considered enabled when it is not disabled." (`refs/playwright/docs/src/actionability.md:96`)
-
-> "Element is disabled when ... it is a descendant of an element with `[aria-disabled=true]`." (`refs/playwright/docs/src/actionability.md:101`)
-
-So `expect(locator).toBeEnabled()` is strict by design; host UI disabled semantics in the outside nav will fail it.
-
-## Visualization
-
-```mermaid
-flowchart LR
-  A[Shopify Admin Shell<br/>outside iframe] --> B[App iframe<br/>your app routes]
-
-  subgraph Outside[Outside iframe]
-    O1[Shopify sidebar app nav item<br/>Additional page]
-    O2[Title bar button<br/>Generate a product]
-  end
-
-  subgraph Inside[Inside iframe]
-    I1[Page body link<br/>additional page in the app nav]
-    I2[Route content<br/>s-page headings, sections]
-  end
-```
-
-```mermaid
-sequenceDiagram
-  participant U as User/Playwright
-  participant S as Shopify Admin UI (outside)
-  participant AB as App Bridge script
-  participant APP as App iframe app
-  participant R as TanStack Router
-
-  U->>S: click outside app-nav item
-  S->>AB: navigation intent
-  AB->>APP: dispatch shopify:navigate
-  APP->>R: navigate(to=href)
-  R-->>APP: render /app/additional
-```
-
-```mermaid
-flowchart TD
-  T[Test wants to verify route navigation] --> Q{Which surface is stable?}
-  Q -->|Inside iframe link enabled| I[Click inside link]
-  Q -->|Outside nav may be disabled in AX tree| O[Do not assert toBeEnabled on outside nav]
-  O --> A[Assert nav config exists / href correctness]
-```
-
-## Why manual click can appear to work
-
-Most likely one of these:
-
-1. You click a different hit target than Playwright asserted (for example parent row/button in Shopify chrome), while Playwright targets the specific disabled link node.
-2. Interactive state can differ moment-to-moment in Shopify chrome; AX/DOM disabled state and pointer behavior do not always align perfectly in custom host UI.
-3. There may be host-level click handling that still routes even when descendant link is marked disabled.
-
-What we can prove from artifacts: in the failing run, Playwright repeatedly resolved the same outside link and saw it disabled for 60s.
-
-## Practical testing split (recommended)
-
-Use two test intents instead of one mixed assertion:
-
-1. Route navigation behavior (reliable): click inside iframe link and assert destination page heading.
-2. App Bridge nav integration (presence contract): assert outside app-nav item exists and has expected href pattern; avoid `toBeEnabled()` hard requirement for this env.
-
-Current working spec uses this split implicitly: it gates on outside readiness signal (title bar button) and performs navigation click inside iframe (`e2e/nav-additional-page.spec.ts:10`, `e2e/nav-additional-page.spec.ts:15`).
-
-## Extra debugging recipe for future flakes
-
-- Run with trace: `npm run test:e2e -- e2e/nav-additional-page.spec.ts --project=e2e --trace on --headed`
-- Inspect actionability + AX tree in trace viewer.
-- At failure, capture attributes for outside link (`disabled`, `aria-disabled`, `href`) and compare with hit target element under cursor.
+1. Re-run with trace:
+   - `npm run test:e2e -- e2e/nav-additional-page.spec.ts --project=e2e --trace on --headed`
+2. Inspect outside link + ancestors:
+   - `aria-disabled`
+   - `href`
+   - computed `pointer-events`
+3. Verify navigation outcome by URL and iframe heading assertion.
