@@ -1,6 +1,6 @@
 import "@shopify/shopify-api/adapters/web-api";
 import * as ShopifyApi from "@shopify/shopify-api";
-import { Config, Context, Effect, Layer, Option, Redacted, Schema, SchemaGetter } from "effect";
+import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 
 import * as Domain from "@/lib/Domain";
 import { Repository } from "@/lib/Repository";
@@ -86,101 +86,6 @@ const tryShopifyPromise = <A>(evaluate: () => Promise<A>) =>
       }),
   });
 
-const boolOrNullToInt = (v: boolean | undefined): number | null => {
-  if (v === undefined) return null;
-  return v ? 1 : 0;
-};
-
-const intOrNullToBool = (v: number | null): boolean | undefined =>
-  v !== null ? v !== 0 : undefined;
-
-const msToSecOrNull = (v: number | undefined): number | null =>
-  v !== undefined ? Math.floor(v / 1000) : null;
-
-const secToMsOrUndefined = (v: number | null): number | undefined =>
-  v !== null ? v * 1000 : undefined;
-
-const ShopifyApiProps = Schema.Struct({
-  id: Schema.String,
-  shop: Schema.String,
-  state: Schema.String,
-  isOnline: Schema.Boolean,
-  scope: Schema.optional(Schema.String),
-  expires: Schema.optional(Schema.Number),
-  accessToken: Schema.optional(Schema.String),
-  userId: Schema.optional(Schema.Number),
-  firstName: Schema.optional(Schema.String),
-  lastName: Schema.optional(Schema.String),
-  email: Schema.optional(Schema.String),
-  accountOwner: Schema.optional(Schema.Boolean),
-  locale: Schema.optional(Schema.String),
-  collaborator: Schema.optional(Schema.Boolean),
-  emailVerified: Schema.optional(Schema.Boolean),
-  refreshToken: Schema.optional(Schema.String),
-  refreshTokenExpires: Schema.optional(Schema.Number),
-});
-
-const SessionFromApiProps = ShopifyApiProps.pipe(
-  Schema.decodeTo(Domain.Session, {
-    decode: SchemaGetter.transform((props) => ({
-      id: props.id,
-      shop: props.shop,
-      state: props.state,
-      isOnline: props.isOnline ? 1 : 0,
-      scope: props.scope ?? null,
-      expires: msToSecOrNull(props.expires),
-      accessToken: props.accessToken ?? null,
-      userId: props.userId ?? null,
-      firstName: props.firstName ?? null,
-      lastName: props.lastName ?? null,
-      email: props.email ?? null,
-      accountOwner: boolOrNullToInt(props.accountOwner),
-      locale: props.locale ?? null,
-      collaborator: boolOrNullToInt(props.collaborator),
-      emailVerified: boolOrNullToInt(props.emailVerified),
-      refreshToken: props.refreshToken ?? null,
-      refreshTokenExpires: msToSecOrNull(props.refreshTokenExpires),
-    })),
-    encode: SchemaGetter.transform((row) => ({
-      id: row.id,
-      shop: row.shop,
-      state: row.state,
-      isOnline: row.isOnline !== 0,
-      scope: row.scope ?? undefined,
-      expires: secToMsOrUndefined(row.expires),
-      accessToken: row.accessToken ?? undefined,
-      userId: row.userId ?? undefined,
-      firstName: row.firstName ?? undefined,
-      lastName: row.lastName ?? undefined,
-      email: row.email ?? undefined,
-      accountOwner: intOrNullToBool(row.accountOwner),
-      locale: row.locale ?? undefined,
-      collaborator: intOrNullToBool(row.collaborator),
-      emailVerified: intOrNullToBool(row.emailVerified),
-      refreshToken: row.refreshToken ?? undefined,
-      refreshTokenExpires: secToMsOrUndefined(row.refreshTokenExpires),
-    })),
-  }),
-);
-
-const sessionToRow = (session: ShopifyApi.Session) =>
-  tryShopify(() =>
-    Schema.decodeUnknownSync(SessionFromApiProps)(
-      Object.fromEntries(session.toPropertyArray(true)),
-    ),
-  );
-
-const rowToSession = (row: Domain.Session) =>
-  tryShopify(() => {
-    const props = Schema.encodeSync(SessionFromApiProps)(row);
-    return ShopifyApi.Session.fromPropertyArray(
-      Object.entries(props).filter(
-        (entry): entry is [string, string | number | boolean] => entry[1] !== undefined,
-      ),
-      true,
-    );
-  });
-
 const setShopifyDocumentHeaders = (headers: Headers, shop: Domain.Shop) => {
   headers.set(
     "Link",
@@ -241,12 +146,56 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     const storeSession = Effect.fn("Shopify.storeSession")(function* (
       session: ShopifyApi.Session,
     ) {
-      yield* sessionToRow(session).pipe(Effect.flatMap(repository.upsertSession));
+      const associatedUser = session.onlineAccessInfo?.associated_user;
+      yield* Schema.decodeUnknownEffect(Domain.Session)({
+        id: session.id,
+        shop: session.shop,
+        state: session.state,
+        isOnline: session.isOnline ? 1 : 0,
+        scope: session.scope ?? null,
+        expires: session.expires?.getTime() ?? null,
+        accessToken: session.accessToken ?? null,
+        userId: associatedUser?.id ?? null,
+        firstName: associatedUser?.first_name ?? null,
+        lastName: associatedUser?.last_name ?? null,
+        email: associatedUser?.email ?? null,
+        accountOwner:
+          associatedUser?.account_owner === undefined
+            ? null
+            : Number(associatedUser.account_owner),
+        locale: associatedUser?.locale ?? null,
+        collaborator:
+          associatedUser?.collaborator === undefined
+            ? null
+            : Number(associatedUser.collaborator),
+        emailVerified:
+          associatedUser?.email_verified === undefined
+            ? null
+            : Number(associatedUser.email_verified),
+        refreshToken: session.refreshToken ?? null,
+        refreshTokenExpires: session.refreshTokenExpires?.getTime() ?? null,
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ShopifyError({
+              message: "Invalid session payload",
+              cause,
+            }),
+        ),
+        Effect.flatMap(repository.upsertSession),
+      );
     });
     const loadSession = Effect.fn("Shopify.loadSession")(function* (id: Domain.Session["id"]) {
-      const row = yield* repository.findSessionById(id);
-      if (Option.isNone(row)) return Option.none();
-      return yield* rowToSession(row.value).pipe(
+      const storedSession = yield* repository.findSessionById(id);
+      if (Option.isNone(storedSession)) return Option.none();
+      return yield* tryShopify(() =>
+        ShopifyApi.Session.fromPropertyArray(
+          Object.entries(storedSession.value).filter(
+            (entry): entry is [string, string | number] => entry[1] !== null,
+          ),
+          true,
+        ),
+      ).pipe(
         Effect.map(Option.some),
         Effect.catchTag("ShopifyError", () => Effect.succeed(Option.none())),
       );
