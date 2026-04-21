@@ -1,4 +1,4 @@
-name = "TanStack Start"
+name = "tanstack-cloudflare-effect-app"
 roles = ["frontend", "backend"]
 webhooks_path = "/webhooks/app/uninstalled"
 port = 3200
