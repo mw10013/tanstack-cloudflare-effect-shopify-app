@@ -5,8 +5,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { Effect, Schema } from "effect";
 
 import * as Domain from "@/lib/Domain";
-import { Request as AppRequest } from "@/lib/Request";
-import { Shopify } from "@/lib/Shopify";
+import { shopifyServerFnMiddleware } from "@/lib/ShopifyServerFnMiddleware";
 
 const ShopifyErrors = Schema.optional(
   Schema.Array(Schema.Struct({ message: Schema.String })),
@@ -34,20 +33,13 @@ const ProductVariantsBulkUpdateResponse = Schema.Struct({
   errors: ShopifyErrors,
 });
 
-const generateProduct = createServerFn({ method: "POST" }).handler(
-  ({ context: { runEffect } }) =>
+const generateProduct = createServerFn({ method: "POST" })
+  .middleware([shopifyServerFnMiddleware])
+  .handler(({ context: { admin, runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
-        const shopify = yield* Shopify;
-        const request = yield* AppRequest;
-        const auth = yield* shopify.authenticateAdmin(request);
-        if (auth instanceof Response) {
-          return yield* Effect.fail(
-            new Error(`Unexpected Shopify auth response: ${String(auth.status)}`),
-          );
-        }
         const color = ["Red", "Orange", "Yellow", "Green"][Math.floor(Math.random() * 4)];
-        const productCreateResponse = yield* auth.graphql(
+        const productCreateResponse = yield* admin.graphql(
           `#graphql
           mutation populateProduct($product: ProductCreateInput!) {
             productCreate(product: $product) {
@@ -92,7 +84,7 @@ const generateProduct = createServerFn({ method: "POST" }).handler(
           return yield* Effect.fail(new Error("Created product has no variant"));
         }
 
-        const productVariantsBulkUpdateResponse = yield* auth.graphql(
+        const productVariantsBulkUpdateResponse = yield* admin.graphql(
           `#graphql
           mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
             productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -130,7 +122,7 @@ const generateProduct = createServerFn({ method: "POST" }).handler(
         return { product, variant };
       }),
     ),
-);
+  );
 
 export const Route = createFileRoute("/app/")({
   component: AppIndex,
