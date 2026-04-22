@@ -1,14 +1,14 @@
-# Shopify AdminApi Service Architecture (Middleware-Provided Layer)
+# ShopifyAdminApi Service Architecture (Middleware-Provided Layer)
 
 ## Decision
 
-Adopt service-first `AdminApi`, and provide the admin-aware layer in `ShopifyServerFnMiddleware` after auth.
+Adopt service-first `ShopifyAdminApi`, and provide the admin-aware layer in `ShopifyServerFnMiddleware` after auth.
 
 Concretely:
 
-- `AdminApi` is a `Context.Service`.
-- `AdminContext` is internal to `AdminApi.ts`.
-- middleware authenticates once, then wraps/overrides `runEffect` so handlers do not wire `AdminApi.layerFor(admin)` manually.
+- `ShopifyAdminApi` is a `Context.Service`.
+- `ShopifyAdminContext` is internal to `ShopifyAdminApi.ts`.
+- middleware authenticates once, then wraps/overrides `runEffect` so handlers do not wire `ShopifyAdminApi.layerFor(admin)` manually.
 
 ## Why this works well
 
@@ -18,7 +18,7 @@ Concretely:
 - so `admin` only exists after auth succeeds.
 - base runtime layer is built earlier in `worker.ts` (`src/worker.ts:44`, `src/worker.ts:56`).
 
-Result: `AdminContext` cannot be cleanly pre-provided in the base runtime layer.
+Result: `ShopifyAdminContext` cannot be cleanly pre-provided in the base runtime layer.
 
 ### 2) Middleware already owns auth + request context
 
@@ -31,7 +31,7 @@ Result: middleware is the correct place to attach admin-aware dependency provisi
 
 - handlers keep using `runEffect(...)`.
 - no extra `runAdminEffect` API.
-- no per-handler `Effect.provide(AdminApi.layerFor(admin))` noise.
+- no per-handler `Effect.provide(ShopifyAdminApi.layerFor(admin))` noise.
 
 ## Service shape (repo-idiomatic)
 
@@ -42,25 +42,25 @@ This repo uses class services with `make` + explicit `layer`:
 - `src/lib/D1.ts:5`
 - `src/lib/KV.ts:18`
 
-Use the same for `AdminApi`.
+Use the same for `ShopifyAdminApi`.
 
 ```ts
 import { Context, Effect, Layer, Schema } from "effect";
 
-import type { ShopifyAdminContext } from "@/lib/Shopify";
+import type { ShopifyAdminContext as ShopifyAdminContextValue } from "@/lib/Shopify";
 
-export const AdminContext = Context.Service<ShopifyAdminContext>("AdminContext");
+export const ShopifyAdminContext = Context.Service<ShopifyAdminContextValue>("ShopifyAdminContext");
 
-export class AdminApiError extends Schema.TaggedErrorClass<AdminApiError>()(
-  "AdminApiError",
+export class ShopifyAdminApiError extends Schema.TaggedErrorClass<ShopifyAdminApiError>()(
+  "ShopifyAdminApiError",
   { message: Schema.String, cause: Schema.Defect },
 ) {}
 
-export class AdminApi extends Context.Service<AdminApi>()("AdminApi", {
+export class ShopifyAdminApi extends Context.Service<ShopifyAdminApi>()("ShopifyAdminApi", {
   make: Effect.gen(function* () {
-    const admin = yield* AdminContext;
+    const admin = yield* ShopifyAdminContext;
 
-    const getProducts = Effect.fn("AdminApi.getProducts")(function* () {
+    const getProducts = Effect.fn("ShopifyAdminApi.getProducts")(function* () {
       const response = yield* admin.graphql(`#graphql
         query {
           products(first: 10) {
@@ -75,7 +75,7 @@ export class AdminApi extends Context.Service<AdminApi>()("AdminApi", {
       `);
       return yield* Effect.tryPromise(() => response.json()).pipe(
         Effect.mapError((cause) =>
-          new AdminApiError({ message: "getProducts failed", cause }),
+          new ShopifyAdminApiError({ message: "getProducts failed", cause }),
         ),
       );
     });
@@ -84,14 +84,14 @@ export class AdminApi extends Context.Service<AdminApi>()("AdminApi", {
   }),
 }) {
   static readonly layer = Layer.effect(this, this.make);
-  static readonly layerFor = (admin: ShopifyAdminContext) =>
-    this.layer.pipe(Layer.provide(Layer.succeed(AdminContext, admin)));
+  static readonly layerFor = (admin: ShopifyAdminContextValue) =>
+    this.layer.pipe(Layer.provide(Layer.succeed(ShopifyAdminContext, admin)));
 }
 ```
 
 Notes:
 
-- service ids follow repo style: no `app/` prefix (`"AdminApi"`, `"AdminContext"`).
+- service ids follow repo style: no `app/` prefix (`"ShopifyAdminApi"`, `"ShopifyAdminContext"`).
 
 ## Middleware wiring (primary approach)
 
@@ -113,8 +113,8 @@ Wrap/override `runEffect` in `ShopifyServerFnMiddleware` after successful auth.
 
   const baseRunEffect = context.runEffect;
 
-  const runEffect = <A, E, R>(effect: Effect.Effect<A, E, R | AdminApi>) =>
-    baseRunEffect(effect.pipe(Effect.provide(AdminApi.layerFor(auth))));
+  const runEffect = <A, E, R>(effect: Effect.Effect<A, E, R | ShopifyAdminApi>) =>
+    baseRunEffect(effect.pipe(Effect.provide(ShopifyAdminApi.layerFor(auth))));
 
   return next({
     context: {
@@ -130,21 +130,21 @@ Handler stays clean:
 
 ```ts
 .handler(({ context: { runEffect } }) =>
-  runEffect(
-    Effect.gen(function* () {
-      const adminApi = yield* AdminApi;
+    runEffect(
+      Effect.gen(function* () {
+      const adminApi = yield* ShopifyAdminApi;
       return yield* adminApi.getProducts;
     }),
   ),
 )
 ```
 
-## About pre-providing `AdminContext` in `worker.ts`
+## About pre-providing `ShopifyAdminContext` in `worker.ts`
 
 Not recommended.
 
-- you would need nullable/default `AdminContext` before auth.
-- that weakens guarantees and leaks nullability checks into `AdminApi` logic.
+- you would need nullable/default `ShopifyAdminContext` before auth.
+- that weakens guarantees and leaks nullability checks into `ShopifyAdminApi` logic.
 - it mixes unauthenticated and authenticated dependency states into the same base runtime.
 
 Middleware-time provisioning keeps the boundary explicit: auth first, then admin-aware services.
@@ -169,7 +169,7 @@ Also relevant: per-execution injection in auth middleware via `Effect.provideSer
 If middleware `runEffect` override causes typing friction, fallback is one-liner at callsite:
 
 ```ts
-runEffect(program.pipe(Effect.provide(AdminApi.layerFor(admin))))
+runEffect(program.pipe(Effect.provide(ShopifyAdminApi.layerFor(admin))))
 ```
 
 It is still fully idiomatic and keeps runtime behavior equivalent.
@@ -178,8 +178,8 @@ It is still fully idiomatic and keeps runtime behavior equivalent.
 
 Proceed with middleware-provided admin-aware layer.
 
-- implement `AdminApi` service with internal `AdminContext`.
-- keep `AdminApi.layerFor(auth)` as composition helper.
+- implement `ShopifyAdminApi` service with internal `ShopifyAdminContext`.
+- keep `ShopifyAdminApi.layerFor(auth)` as composition helper.
 - in `ShopifyServerFnMiddleware`, override `runEffect` post-auth.
 - handlers continue to call one `runEffect`, now admin-aware.
 
