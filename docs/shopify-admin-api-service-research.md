@@ -1,86 +1,60 @@
-# Shopify Admin API Service: Architecture (Service-First)
+# Shopify AdminApi Service Architecture (Middleware-Provided Layer)
 
 ## Decision
 
-Use a real `AdminApi` `Context.Service`, not a module of free functions.
+Adopt service-first `AdminApi`, and provide the admin-aware layer in `ShopifyServerFnMiddleware` after auth.
 
-Reason: this module is not a thin wrapper and should be a first-class boundary (testable, swappable, composable) without leaking `AdminContext` into route handlers.
+Concretely:
 
-## Grounding in this repo
+- `AdminApi` is a `Context.Service`.
+- `AdminContext` is internal to `AdminApi.ts`.
+- middleware authenticates once, then wraps/overrides `runEffect` so handlers do not wire `AdminApi.layerFor(admin)` manually.
 
-Current service pattern here is class service + `make` + explicit `layer`:
+## Why this works well
 
-- `Shopify`: `src/lib/Shopify.ts:147`, `src/lib/Shopify.ts:148`, `src/lib/Shopify.ts:431`
-- `Repository`: `src/lib/Repository.ts:14`, `src/lib/Repository.ts:15`, `src/lib/Repository.ts:148`
-- `D1`: `src/lib/D1.ts:5`, `src/lib/D1.ts:6`, `src/lib/D1.ts:54`
-- `KV`: `src/lib/KV.ts:18`, `src/lib/KV.ts:19`, `src/lib/KV.ts:68`
+### 1) Timing matches runtime reality
 
-Also: this codebase usually uses simple service ids (`"Shopify"`, `"Repository"`, `"D1"`, `"KV"`, `"CloudflareEnv"`).
+- `Shopify.authenticateAdmin(request)` returns `ShopifyAdminContext | Response` (`src/lib/Shopify.ts:30`, `src/lib/Shopify.ts:290`).
+- so `admin` only exists after auth succeeds.
+- base runtime layer is built earlier in `worker.ts` (`src/worker.ts:44`, `src/worker.ts:56`).
 
-- One existing outlier has `"app/Request"` in `src/lib/Request.ts:3`.
-- For new services, prefer repo convention: no `app/` prefix.
+Result: `AdminContext` cannot be cleanly pre-provided in the base runtime layer.
 
-## Grounding in Effect v4 refs
+### 2) Middleware already owns auth + request context
 
-- `Context.Service` is the default service model: `refs/effect4/LLMS.md:99`, `refs/effect4/LLMS.md:105`.
-- v4 service construction pattern is `make` + `Layer.effect(...)`: `refs/effect4/migration/services.md:173`, `refs/effect4/migration/services.md:175`, `refs/effect4/migration/services.md:187`.
-- `Effect.provideService` is explicitly for injecting one concrete service value into one effect execution: `refs/effect4/packages/effect/src/Effect.ts:5929`, `refs/effect4/packages/effect/src/Effect.ts:5948`.
-- Per-request auth injection pattern exists in docs (`CurrentUser` middleware): `refs/effect4/ai-docs/src/51_http-server/fixtures/server/Authorization.ts:24`.
+- middleware already calls auth with `context.runEffect(...)` (`src/lib/ShopifyServerFnMiddleware.ts:42`).
+- middleware already enriches context via `next({ context: ... })` (`src/lib/ShopifyServerFnMiddleware.ts:52`).
 
-## Auth timing constraint (unchanged)
+Result: middleware is the correct place to attach admin-aware dependency provisioning.
 
-`Shopify.authenticateAdmin(request)` returns `ShopifyAdminContext | Response` (`src/lib/Shopify.ts:30`, `src/lib/Shopify.ts:290`).
+### 3) Preserves one mental model for handlers
 
-So `ShopifyAdminContext` is only available after request auth resolves. It cannot live in static app runtime layer built in `worker.ts` (`src/worker.ts:44`, `src/worker.ts:56`).
+- handlers keep using `runEffect(...)`.
+- no extra `runAdminEffect` API.
+- no per-handler `Effect.provide(AdminApi.layerFor(admin))` noise.
 
-## Recommended shape
+## Service shape (repo-idiomatic)
 
-### 1) Keep request-scoped raw value as internal service
+This repo uses class services with `make` + explicit `layer`:
 
-```ts
-export const AdminContext = Context.Service<ShopifyAdminContext>("AdminContext");
-```
+- `src/lib/Shopify.ts:147`
+- `src/lib/Repository.ts:14`
+- `src/lib/D1.ts:5`
+- `src/lib/KV.ts:18`
 
-No `app/` prefix.
-
-### 2) Expose only `AdminApi` publicly
+Use the same for `AdminApi`.
 
 ```ts
 import { Context, Effect, Layer, Schema } from "effect";
 
 import type { ShopifyAdminContext } from "@/lib/Shopify";
-import * as Domain from "@/lib/Domain";
 
-const ShopifyErrors = Schema.optional(
-  Schema.Array(Schema.Struct({ message: Schema.String })),
-);
-
-const ProductsResponse = Schema.Struct({
-  data: Schema.optional(
-    Schema.Struct({
-      products: Schema.Struct({
-        edges: Schema.Array(
-          Schema.Struct({
-            node: Domain.Product,
-          }),
-        ),
-      }),
-    }),
-  ),
-  errors: ShopifyErrors,
-});
+export const AdminContext = Context.Service<ShopifyAdminContext>("AdminContext");
 
 export class AdminApiError extends Schema.TaggedErrorClass<AdminApiError>()(
   "AdminApiError",
   { message: Schema.String, cause: Schema.Defect },
 ) {}
-
-const mapAdminApiError =
-  (message: string) =>
-  (cause: unknown) =>
-    new AdminApiError({ message, cause });
-
-export const AdminContext = Context.Service<ShopifyAdminContext>("AdminContext");
 
 export class AdminApi extends Context.Service<AdminApi>()("AdminApi", {
   make: Effect.gen(function* () {
@@ -94,169 +68,65 @@ export class AdminApi extends Context.Service<AdminApi>()("AdminApi", {
               node {
                 id
                 title
-                handle
-                status
-                variants(first: 10) {
-                  edges {
-                    node {
-                      id
-                      price
-                      barcode
-                      createdAt
-                    }
-                  }
-                }
               }
             }
           }
         }
       `);
-
-      const decoded = yield* Effect.tryPromise(() => response.json()).pipe(
-        Effect.mapError(mapAdminApiError("getProducts response json failed")),
-        Effect.flatMap(Schema.decodeUnknownEffect(ProductsResponse)),
-        Effect.mapError(mapAdminApiError("getProducts decode failed")),
+      return yield* Effect.tryPromise(() => response.json()).pipe(
+        Effect.mapError((cause) =>
+          new AdminApiError({ message: "getProducts failed", cause }),
+        ),
       );
-
-      if (!decoded.data?.products) {
-        return yield* Effect.fail(
-          new AdminApiError({
-            message: decoded.errors?.[0]?.message ?? "getProducts failed",
-            cause: decoded,
-          }),
-        );
-      }
-
-      return decoded.data.products.edges.map((edge) => edge.node);
     });
 
     return { getProducts };
   }),
 }) {
   static readonly layer = Layer.effect(this, this.make);
-
   static readonly layerFor = (admin: ShopifyAdminContext) =>
     this.layer.pipe(Layer.provide(Layer.succeed(AdminContext, admin)));
 }
 ```
 
-### 3) Handler only depends on `AdminApi`
+Notes:
+
+- service ids follow repo style: no `app/` prefix (`"AdminApi"`, `"AdminContext"`).
+
+## Middleware wiring (primary approach)
+
+Wrap/override `runEffect` in `ShopifyServerFnMiddleware` after successful auth.
 
 ```ts
-.handler(({ context: { admin, runEffect } }) =>
-  runEffect(
+.server(async ({ next, context }) => {
+  const auth = await context.runEffect(
     Effect.gen(function* () {
-      const adminApi = yield* AdminApi;
-      return yield* adminApi.getProducts;
-    }).pipe(Effect.provide(AdminApi.layerFor(admin))),
-  )
-)
+      const shopify = yield* Shopify;
+      const request = yield* AppRequest;
+      return yield* shopify.authenticateAdmin(request);
+    }),
+  );
+
+  if (auth instanceof Response) {
+    throw new TypeError(`Unexpected Shopify auth response: ${String(auth.status)}`);
+  }
+
+  const baseRunEffect = context.runEffect;
+
+  const runEffect = <A, E, R>(effect: Effect.Effect<A, E, R | AdminApi>) =>
+    baseRunEffect(effect.pipe(Effect.provide(AdminApi.layerFor(auth))));
+
+  return next({
+    context: {
+      admin: auth,
+      session: auth.session,
+      runEffect,
+    },
+  });
+})
 ```
 
-This removes `AdminContext` from route-level dependency surface.
-
-## Is `layerFor` idiomatic?
-
-Yes. The exact name `layerFor` is project-specific, but the pattern (a function that takes runtime input and returns a `Layer`) is idiomatic and common.
-
-Evidence in `refs/effect4`:
-
-- Layer factory on a service class: `DatabasePool.layer(tenantId)` in `refs/effect4/ai-docs/src/01_effect/04_resources/30_layer-map.ts:27`.
-- Dynamic layer variant by input: `MessageStore.layerRemote(url)` in `refs/effect4/ai-docs/src/01_effect/02_services/20_layer-unwrap.ts:31`.
-- Top-level layer factories from runtime config: `layerConfig(config)` and `layer(config)` in `refs/effect4/packages/sql/clickhouse/src/ClickhouseClient.ts:397`, `refs/effect4/packages/sql/clickhouse/src/ClickhouseClient.ts:417`.
-
-`layerFor(admin)` is the same shape: take request value, build/provide a layer, then use `Effect.provide(...)`.
-
-## Other idiomatic wiring options
-
-### Option A: keep `layerFor` (recommended)
-
-```ts
-Effect.gen(function* () {
-  const adminApi = yield* AdminApi;
-  return yield* adminApi.getProducts;
-}).pipe(Effect.provide(AdminApi.layerFor(admin)));
-```
-
-Pros: one reusable entrypoint, less repeated layer plumbing in handlers.
-
-### Option B: inline layer composition at callsite
-
-```ts
-Effect.gen(function* () {
-  const adminApi = yield* AdminApi;
-  return yield* adminApi.getProducts;
-}).pipe(
-  Effect.provide(
-    AdminApi.layer.pipe(
-      Layer.provide(Layer.succeed(AdminContext, admin)),
-    ),
-  ),
-);
-```
-
-Same semantics as `layerFor`, just noisier.
-
-### Option C: provide dependency and service separately
-
-```ts
-Effect.gen(function* () {
-  const adminApi = yield* AdminApi;
-  return yield* adminApi.getProducts;
-}).pipe(
-  Effect.provide(AdminApi.layer),
-  Effect.provideService(AdminContext, admin),
-);
-```
-
-Evidence that per-execution single-service injection is idiomatic: `Effect.provideService` docs in `refs/effect4/packages/effect/src/Effect.ts:5929` and HTTP auth fixture in `refs/effect4/ai-docs/src/51_http-server/fixtures/server/Authorization.ts:24`.
-
-### Option D: effectful service acquisition (`provideServiceEffect`)
-
-```ts
-Effect.provideServiceEffect(AdminContext, getAdminEffect)(program)
-```
-
-Evidence: `provideServiceEffect` docs in `refs/effect4/packages/effect/src/Effect.ts:5983`, `refs/effect4/packages/effect/src/Effect.ts:5999`.
-
-Useful when the provided dependency itself must be acquired effectfully.
-
-## Worker vs middleware provisioning
-
-### Can `worker.ts` pre-provide `AdminContext` in base runtime layer?
-
-Not cleanly.
-
-- `admin` does not exist until `Shopify.authenticateAdmin(request)` succeeds (`src/lib/Shopify.ts:290`).
-- `authenticateAdmin` can return `Response` redirect/unauthorized control flow (`src/lib/Shopify.ts:30`, `src/lib/Shopify.ts:347`).
-- Base runtime layer in `makeRunEffect` is built before route middleware logic (`src/worker.ts:44`, `src/worker.ts:56`).
-
-You could seed a nullable/default `AdminContext`, but that weakens type guarantees and pushes null/empty checks into `AdminApi` methods.
-
-### Better: provide admin-aware layer after auth in middleware
-
-Yes, this is the right lazy-per-request model.
-
-`ShopifyServerFnMiddleware` already has everything needed (`context.runEffect` + authenticated `auth`): `src/lib/ShopifyServerFnMiddleware.ts:42`, `src/lib/ShopifyServerFnMiddleware.ts:52`.
-
-If you do not want a separate `runAdminEffect`, override `runEffect` in middleware context:
-
-```ts
-const baseRunEffect = context.runEffect;
-
-const runEffect = <A, E, R>(effect: Effect.Effect<A, E, R | AdminApi>) =>
-  baseRunEffect(effect.pipe(Effect.provide(AdminApi.layerFor(auth))));
-
-return next({
-  context: {
-    admin: auth,
-    session: auth.session,
-    runEffect,
-  },
-});
-```
-
-Then handler stays simple and uses normal `runEffect`:
+Handler stays clean:
 
 ```ts
 .handler(({ context: { runEffect } }) =>
@@ -269,37 +139,71 @@ Then handler stays simple and uses normal `runEffect`:
 )
 ```
 
-This preserves one mental model (`runEffect`) and removes repeated per-handler layer plumbing.
+## About pre-providing `AdminContext` in `worker.ts`
+
+Not recommended.
+
+- you would need nullable/default `AdminContext` before auth.
+- that weakens guarantees and leaks nullability checks into `AdminApi` logic.
+- it mixes unauthenticated and authenticated dependency states into the same base runtime.
+
+Middleware-time provisioning keeps the boundary explicit: auth first, then admin-aware services.
+
+## Is `layerFor` idiomatic in Effect v4?
+
+Yes, the pattern is idiomatic. The name is local.
+
+Evidence from `refs/effect4` showing layer factories from runtime input:
+
+- `DatabasePool.layer(tenantId)` in `refs/effect4/ai-docs/src/01_effect/04_resources/30_layer-map.ts:27`
+- `MessageStore.layerRemote(url)` in `refs/effect4/ai-docs/src/01_effect/02_services/20_layer-unwrap.ts:31`
+- `layerConfig(config)` and `layer(config)` in `refs/effect4/packages/sql/clickhouse/src/ClickhouseClient.ts:397`, `refs/effect4/packages/sql/clickhouse/src/ClickhouseClient.ts:417`
+
+Also relevant: per-execution injection in auth middleware via `Effect.provideService(...)`:
+
+- `refs/effect4/ai-docs/src/51_http-server/fixtures/server/Authorization.ts:24`
+- API docs: `refs/effect4/packages/effect/src/Effect.ts:5929`
+
+## Alternative idiomatic wiring (if needed)
+
+If middleware `runEffect` override causes typing friction, fallback is one-liner at callsite:
+
+```ts
+runEffect(program.pipe(Effect.provide(AdminApi.layerFor(admin))))
+```
+
+It is still fully idiomatic and keeps runtime behavior equivalent.
 
 ## Recommendation
 
-Adopt service-first now.
+Proceed with middleware-provided admin-aware layer.
 
-- Service ids: use `"AdminApi"` and `"AdminContext"` (no `app/` prefix).
-- Keep `AdminContext` internal to `src/lib/AdminApi.ts`.
-- Use `AdminApi.layerFor(admin)` as the default wiring helper.
-- In middleware, wrap/override `runEffect` with `Effect.provide(AdminApi.layerFor(auth))` so handlers keep using one `runEffect`.
-- Keep auth/session/token logic in `Shopify.authenticateAdmin` + `ShopifyServerFnMiddleware` (`src/lib/Shopify.ts:290`, `src/lib/ShopifyServerFnMiddleware.ts:52`).
+- implement `AdminApi` service with internal `AdminContext`.
+- keep `AdminApi.layerFor(auth)` as composition helper.
+- in `ShopifyServerFnMiddleware`, override `runEffect` post-auth.
+- handlers continue to call one `runEffect`, now admin-aware.
 
 ## References
 
-- **Repo service pattern (`make` + `Layer.effect`)**
-  - `src/lib/Shopify.ts:147`
-  - `src/lib/Repository.ts:14`
-  - `src/lib/D1.ts:5`
-  - `src/lib/KV.ts:18`
-- **Effect service model + v4 `make` guidance**
-  - `refs/effect4/LLMS.md:99`
-  - `refs/effect4/migration/services.md:173`
-  - `refs/effect4/migration/services.md:175`
-  - `refs/effect4/migration/services.md:187`
-- **Layer factory / dynamic layer examples (evidence for `layerFor` shape)**
-  - `refs/effect4/ai-docs/src/01_effect/04_resources/30_layer-map.ts:27` (`DatabasePool.layer(tenantId)`)
-  - `refs/effect4/ai-docs/src/01_effect/02_services/20_layer-unwrap.ts:31` (`MessageStore.layerRemote(url)`)
-  - `refs/effect4/packages/sql/clickhouse/src/ClickhouseClient.ts:397` (`layerConfig(config)`)
-  - `refs/effect4/packages/sql/clickhouse/src/ClickhouseClient.ts:417` (`layer(config)`)
-- **Per-execution service injection / alternatives**
-  - `refs/effect4/packages/effect/src/Effect.ts:5929` (`provideService`)
-  - `refs/effect4/packages/effect/src/Effect.ts:5983` (`provideServiceEffect` example)
-  - `refs/effect4/packages/effect/src/Effect.ts:5999` (`provideServiceEffect` API)
-  - `refs/effect4/ai-docs/src/51_http-server/fixtures/server/Authorization.ts:24` (`provideService` in auth middleware)
+- `src/lib/Shopify.ts:30`
+- `src/lib/Shopify.ts:290`
+- `src/lib/ShopifyServerFnMiddleware.ts:42`
+- `src/lib/ShopifyServerFnMiddleware.ts:52`
+- `src/worker.ts:44`
+- `src/worker.ts:56`
+- `src/lib/Shopify.ts:147`
+- `src/lib/Repository.ts:14`
+- `src/lib/D1.ts:5`
+- `src/lib/KV.ts:18`
+- `src/lib/Request.ts:3`
+- `refs/effect4/LLMS.md:99`
+- `refs/effect4/LLMS.md:105`
+- `refs/effect4/migration/services.md:173`
+- `refs/effect4/migration/services.md:175`
+- `refs/effect4/migration/services.md:187`
+- `refs/effect4/ai-docs/src/01_effect/04_resources/30_layer-map.ts:27`
+- `refs/effect4/ai-docs/src/01_effect/02_services/20_layer-unwrap.ts:31`
+- `refs/effect4/packages/sql/clickhouse/src/ClickhouseClient.ts:397`
+- `refs/effect4/packages/sql/clickhouse/src/ClickhouseClient.ts:417`
+- `refs/effect4/ai-docs/src/51_http-server/fixtures/server/Authorization.ts:24`
+- `refs/effect4/packages/effect/src/Effect.ts:5929`
