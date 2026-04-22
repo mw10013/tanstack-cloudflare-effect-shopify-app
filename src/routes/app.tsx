@@ -41,6 +41,15 @@ declare module "react" {
   }
 }
 
+/**
+ * Route-boundary Shopify auth for `/app` document requests.
+ *
+ * Rebuilds an absolute app URL from router pathname/search, runs
+ * `shopify.authenticateAdmin`, and normalizes redirect Responses into
+ * `{ redirect }` for `beforeLoad` to throw via TanStack `redirect(...)`.
+ *
+ * Successful auth returns route context with `apiKey` and authenticated `shop`.
+ */
 const authenticateAppRoute = createServerFn({ method: "GET" })
   .inputValidator(
     (input: {
@@ -84,6 +93,13 @@ const authenticateAppRoute = createServerFn({ method: "GET" })
 );
 
 export const Route = createFileRoute("/app")({
+  /**
+   * Enforces auth at the `/app` layout boundary before child routes load.
+   *
+   * Throws TanStack `redirect(...)` when Shopify auth indicates a redirect
+   * (login/embed/session-token bounce). Otherwise returns auth context for the
+   * `/app` subtree.
+   */
   beforeLoad: async ({ location }) => {
     const result = await authenticateAppRoute({
       data: {

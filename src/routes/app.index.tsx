@@ -33,6 +33,13 @@ const ProductVariantsBulkUpdateResponse = Schema.Struct({
   errors: ShopifyErrors,
 });
 
+/**
+ * Creates a demo product via Admin GraphQL using authenticated middleware
+ * context (`context.admin`).
+ *
+ * Auth is intentionally delegated to `shopifyServerFnMiddleware` so business
+ * logic stays free of request/session-token handling.
+ */
 const generateProduct = createServerFn({ method: "POST" })
   .middleware([shopifyServerFnMiddleware])
   .handler(({ context: { admin, runEffect } }) =>
