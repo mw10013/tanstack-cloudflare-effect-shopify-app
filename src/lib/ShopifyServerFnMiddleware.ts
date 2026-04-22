@@ -56,6 +56,13 @@ export const shopifyServerFnMiddleware = createMiddleware({ type: "function" })
       );
     }
     const baseRunEffect = context.runEffect;
+    /**
+     * Exact runtime requirement accepted by worker-level `runEffect`.
+     *
+     * We derive this from `baseRunEffect` so middleware wrappers stay aligned
+     * with `makeRunEffect` in `src/worker.ts` and cannot accidentally accept
+     * effects that require services outside the app runtime layer.
+     */
     type RuntimeRequirements = Parameters<typeof baseRunEffect>[0] extends Effect.Effect<
       unknown,
       unknown,
