@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Effect } from "effect";
 
-import { Request as AppRequest } from "@/lib/Request";
+import { CurrentRequest } from "@/lib/CurrentRequest";
 import { Shopify } from "@/lib/Shopify";
 
 /**
@@ -47,7 +47,7 @@ export const Route = createFileRoute("/auth/login")({
       GET: ({ context: { runEffect } }) =>
         runEffect(
           Effect.gen(function* () {
-            const request = yield* AppRequest;
+            const request = yield* CurrentRequest;
             const shopify = yield* Shopify;
             const result = yield* shopify.login(request);
             if (result instanceof Response) {
@@ -63,7 +63,7 @@ export const Route = createFileRoute("/auth/login")({
       POST: ({ context: { runEffect } }) =>
         runEffect(
           Effect.gen(function* () {
-            const request = yield* AppRequest;
+            const request = yield* CurrentRequest;
             const shopify = yield* Shopify;
             const result = yield* shopify.login(request);
             if (result instanceof Response) {

@@ -3,7 +3,7 @@ import { WebhookValidationErrorReason } from "@shopify/shopify-api";
 import { Effect, Schema } from "effect";
 
 import * as Domain from "@/lib/Domain";
-import { Request as AppRequest } from "@/lib/Request";
+import { CurrentRequest } from "@/lib/CurrentRequest";
 import { Shopify } from "@/lib/Shopify";
 
 /**
@@ -25,7 +25,7 @@ export const Route = createFileRoute("/webhooks/app/uninstalled")({
       POST: ({ context: { runEffect } }) =>
         runEffect(
           Effect.gen(function* () {
-            const request = yield* AppRequest;
+            const request = yield* CurrentRequest;
             const shopify = yield* Shopify;
             const result = yield* shopify.validateWebhook(request);
             if (!result.valid) {

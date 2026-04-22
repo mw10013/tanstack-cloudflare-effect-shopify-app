@@ -7,7 +7,7 @@ import { D1 } from "@/lib/D1";
 import { KV } from "@/lib/KV";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import { Repository } from "@/lib/Repository";
-import { Request as AppRequest } from "@/lib/Request";
+import { CurrentRequest } from "@/lib/CurrentRequest";
 import { Shopify } from "@/lib/Shopify";
 
 /**
@@ -47,7 +47,7 @@ const makeRunEffect = (env: Env, request: Request) => {
   const kvLayer = Layer.provideMerge(KV.layer, envLayer);
   const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
   const requestLayer = Layer.succeedContext(
-    Context.make(AppRequest, request),
+    Context.make(CurrentRequest, request),
   );
   const shopifyLayer = Layer.provideMerge(
     Shopify.layer,

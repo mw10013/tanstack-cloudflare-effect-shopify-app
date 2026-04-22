@@ -2,7 +2,7 @@ import type { useAppBridge } from "@shopify/app-bridge-react";
 import { createMiddleware } from "@tanstack/react-start";
 import { Effect } from "effect";
 
-import { Request as AppRequest } from "@/lib/Request";
+import { CurrentRequest } from "@/lib/CurrentRequest";
 import { ShopifyAdminApi } from "@/lib/ShopifyAdminApi";
 import { Shopify } from "@/lib/Shopify";
 
@@ -43,7 +43,7 @@ export const shopifyServerFnMiddleware = createMiddleware({ type: "function" })
     const auth = await context.runEffect(
       Effect.gen(function* () {
         const shopify = yield* Shopify;
-        const request = yield* AppRequest;
+        const request = yield* CurrentRequest;
         return yield* shopify.authenticateAdmin(request);
       }),
     );

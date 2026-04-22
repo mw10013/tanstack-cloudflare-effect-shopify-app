@@ -28,7 +28,7 @@ import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-
 import { createServerFn } from "@tanstack/react-start";
 import { Effect, Redacted } from "effect";
 
-import { Request as AppRequest } from "@/lib/Request";
+import { CurrentRequest } from "@/lib/CurrentRequest";
 import { AppProvider } from "@/components/AppProvider";
 import { Shopify } from "@/lib/Shopify";
 
@@ -61,7 +61,7 @@ const authenticateAppRoute = createServerFn({ method: "GET" })
     const result = await runEffect(
       Effect.gen(function* () {
         const shopify = yield* Shopify;
-        const request = yield* AppRequest;
+        const request = yield* CurrentRequest;
         const appRequest = new Request(
           `${shopify.config.appUrl}${data.pathname}${data.searchStr}`,
           {
