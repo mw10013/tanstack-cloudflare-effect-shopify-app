@@ -270,6 +270,23 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         return { ...result, rawBody };
       },
     );
+    /**
+     * Authenticates Shopify Admin requests for embedded app flows.
+     *
+     * Supported request shapes:
+     * - document/navigation requests using `shop`, `host`, and `id_token` query params
+     * - XHR/RPC requests carrying `Authorization: Bearer <session_token>`
+     *
+     * Behavior:
+     * - renders App Bridge bounce/exit pages for `/auth/session-token` and `/auth/exit-iframe`
+     * - redirects to login/embedded/bounce routes when required auth params are missing
+     * - validates and decodes the session token, derives shop from token payload, loads stored offline session
+     * - exchanges token and persists session when no active stored session exists
+     *
+     * Returns either:
+     * - `ShopifyAdminContext` on success
+     * - `Response` for redirect/bounce/unauthorized document control flow
+     */
     const authenticateAdmin = Effect.fn("Shopify.authenticateAdmin")(
       function* (request: Request) {
         const url = new URL(request.url);
