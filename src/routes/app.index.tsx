@@ -5,6 +5,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { Effect, Schema } from "effect";
 
 import * as Domain from "@/lib/Domain";
+import { ShopifyAdminApi } from "@/lib/ShopifyAdminApi";
 import { shopifyServerFnMiddleware } from "@/lib/ShopifyServerFnMiddleware";
 
 const ShopifyErrors = Schema.optional(
@@ -35,18 +36,20 @@ const ProductVariantsBulkUpdateResponse = Schema.Struct({
 
 /**
  * Creates a demo product via Admin GraphQL using authenticated middleware
- * context (`context.admin`).
+ * context (`context.runEffect`) and `ShopifyAdminApi` service access.
  *
  * Auth is intentionally delegated to `shopifyServerFnMiddleware` so business
  * logic stays free of request/session-token handling.
  */
 const generateProduct = createServerFn({ method: "POST" })
   .middleware([shopifyServerFnMiddleware])
-  .handler(({ context: { admin, runEffect } }) =>
+  .handler(({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
+        const adminApi = yield* ShopifyAdminApi;
         const color = ["Red", "Orange", "Yellow", "Green"][Math.floor(Math.random() * 4)];
-        const productCreateResponse = yield* admin.graphql(
+        const productCreateJson = yield* adminApi.graphqlDecode(
+          ProductCreateResponse,
           `#graphql
           mutation populateProduct($product: ProductCreateInput!) {
             productCreate(product: $product) {
@@ -76,9 +79,6 @@ const generateProduct = createServerFn({ method: "POST" })
             },
           },
         );
-        const productCreateJson = yield* Effect.tryPromise(
-          () => productCreateResponse.json(),
-        ).pipe(Effect.flatMap(Schema.decodeUnknownEffect(ProductCreateResponse)));
         const product = productCreateJson.data?.productCreate?.product;
         if (!product) {
           return yield* Effect.fail(
@@ -91,7 +91,8 @@ const generateProduct = createServerFn({ method: "POST" })
           return yield* Effect.fail(new Error("Created product has no variant"));
         }
 
-        const productVariantsBulkUpdateResponse = yield* admin.graphql(
+        const productVariantsBulkUpdateJson = yield* adminApi.graphqlDecode(
+          ProductVariantsBulkUpdateResponse,
           `#graphql
           mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
             productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -110,9 +111,6 @@ const generateProduct = createServerFn({ method: "POST" })
             },
           },
         );
-        const productVariantsBulkUpdateJson = yield* Effect.tryPromise(
-          () => productVariantsBulkUpdateResponse.json(),
-        ).pipe(Effect.flatMap(Schema.decodeUnknownEffect(ProductVariantsBulkUpdateResponse)));
 
         const variant =
           productVariantsBulkUpdateJson.data?.productVariantsBulkUpdate

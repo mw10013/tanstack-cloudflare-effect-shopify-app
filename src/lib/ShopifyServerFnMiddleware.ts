@@ -3,6 +3,7 @@ import { createMiddleware } from "@tanstack/react-start";
 import { Effect } from "effect";
 
 import { Request as AppRequest } from "@/lib/Request";
+import { ShopifyAdminApi } from "@/lib/ShopifyAdminApi";
 import { Shopify } from "@/lib/Shopify";
 
 type ShopifyGlobal = ReturnType<typeof useAppBridge>;
@@ -47,7 +48,30 @@ export const shopifyServerFnMiddleware = createMiddleware({ type: "function" })
       }),
     );
     if (auth instanceof Response) {
-      throw new TypeError(`Unexpected Shopify auth response: ${String(auth.status)}`);
+      const location = auth.headers.get("Location") ?? auth.headers.get("location");
+      throw new Error(
+        location
+          ? `Shopify admin auth redirect required: ${location}`
+          : `Shopify admin auth failed (${String(auth.status)})`,
+      );
     }
-    return next({ context: { admin: auth, session: auth.session } });
+    const baseRunEffect = context.runEffect;
+    type RuntimeRequirements = Parameters<typeof baseRunEffect>[0] extends Effect.Effect<
+      unknown,
+      unknown,
+      infer R
+    >
+      ? R
+      : never;
+    const runEffect = <A, E, R extends RuntimeRequirements>(
+      effect: Effect.Effect<A, E, R | ShopifyAdminApi>,
+    ) =>
+      baseRunEffect(
+        effect.pipe(Effect.provide(ShopifyAdminApi.layerFor(auth))) as Effect.Effect<
+          A,
+          E,
+          RuntimeRequirements
+        >,
+      );
+    return next({ context: { admin: auth, session: auth.session, runEffect } });
   });
