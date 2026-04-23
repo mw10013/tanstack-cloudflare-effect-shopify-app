@@ -37,17 +37,9 @@ export class ShopifyAdminApi extends Context.Service<ShopifyAdminApi>()(
           query: string,
           options?: ShopifyGraphqlOptions,
         ) {
-          const response = yield* graphql(query, options);
-          const json = yield* Effect.tryPromise({
-            try: () => response.json(),
-            catch: (cause) =>
-              new ShopifyAdminApiError({
-                message: "Admin GraphQL JSON decode failed",
-                cause,
-              }),
-          });
+          const { data } = yield* graphql(query, options);
           return yield* Effect.try({
-            try: () => Schema.decodeUnknownSync(schema)(json),
+            try: () => Schema.decodeUnknownSync(schema)(data),
             catch: (cause) =>
               new ShopifyAdminApiError({
                 message: "Admin GraphQL response validation failed",

@@ -24,7 +24,7 @@ export interface ShopifyAdminContext {
   readonly graphql: (
     query: string,
     options?: { readonly variables?: Record<string, unknown> },
-  ) => Effect.Effect<Response, ShopifyError>;
+  ) => Effect.Effect<Awaited<ReturnType<InstanceType<typeof ShopifyApi.GraphqlClient>["request"]>>, ShopifyError>;
 }
 
 export type ShopifyAuthenticateAdminResult = ShopifyAdminContext | Response;
@@ -140,7 +140,7 @@ const buildAdminContext = (
         variables: options?.variables,
       }),
     );
-    return Response.json(apiResponse);
+    return apiResponse;
   }),
 });
 

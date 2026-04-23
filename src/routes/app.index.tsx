@@ -8,30 +8,16 @@ import * as Domain from "@/lib/Domain";
 import { ShopifyAdminApi } from "@/lib/ShopifyAdminApi";
 import { shopifyServerFnMiddleware } from "@/lib/ShopifyServerFnMiddleware";
 
-const ShopifyErrors = Schema.optional(
-  Schema.Array(Schema.Struct({ message: Schema.String })),
-);
-
 const ProductCreateResponse = Schema.Struct({
-  data: Schema.optional(
-    Schema.Struct({
-      productCreate: Schema.optional(
-        Schema.Struct({ product: Schema.optional(Domain.Product) }),
-      ),
-    }),
+  productCreate: Schema.optional(
+    Schema.Struct({ product: Schema.optional(Domain.Product) }),
   ),
-  errors: ShopifyErrors,
 });
 
 const ProductVariantsBulkUpdateResponse = Schema.Struct({
-  data: Schema.optional(
-    Schema.Struct({
-      productVariantsBulkUpdate: Schema.optional(
-        Schema.Struct({ productVariants: Schema.optional(Schema.Array(Domain.ProductVariant)) }),
-      ),
-    }),
+  productVariantsBulkUpdate: Schema.optional(
+    Schema.Struct({ productVariants: Schema.optional(Schema.Array(Domain.ProductVariant)) }),
   ),
-  errors: ShopifyErrors,
 });
 
 /**
@@ -79,11 +65,9 @@ const generateProduct = createServerFn({ method: "POST" })
             },
           },
         );
-        const product = productCreateJson.data?.productCreate?.product;
+        const product = productCreateJson.productCreate?.product;
         if (!product) {
-          return yield* Effect.fail(
-            new Error(productCreateJson.errors?.[0]?.message ?? "Product create failed"),
-          );
+          return yield* Effect.fail(new Error("Product create failed"));
         }
 
         const variantId = product.variants.edges[0]?.node.id;
@@ -112,16 +96,9 @@ const generateProduct = createServerFn({ method: "POST" })
           },
         );
 
-        const variant =
-          productVariantsBulkUpdateJson.data?.productVariantsBulkUpdate
-            ?.productVariants;
+        const variant = productVariantsBulkUpdateJson.productVariantsBulkUpdate?.productVariants;
         if (!variant) {
-          return yield* Effect.fail(
-            new Error(
-              productVariantsBulkUpdateJson.errors?.[0]?.message ??
-                "Product variant update failed",
-            ),
-          );
+          return yield* Effect.fail(new Error("Product variant update failed"));
         }
 
         return { product, variant };
