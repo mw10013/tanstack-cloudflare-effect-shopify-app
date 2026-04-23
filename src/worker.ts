@@ -4,7 +4,6 @@ import { Cause, Effect, Layer, Context, ManagedRuntime } from "effect";
 import * as Exit from "effect/Exit";
 
 import { D1 } from "@/lib/D1";
-import { KV } from "@/lib/KV";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
 import { ProductRepository } from "@/lib/ProductRepository";
 import { Repository } from "@/lib/Repository";
@@ -14,7 +13,6 @@ import { Shopify } from "@/lib/Shopify";
 const makeAppLayer = (env: Env, request: Request) => {
   const envLayer = makeEnvLayer(env);
   const d1Layer = Layer.provideMerge(D1.layer, envLayer);
-  const kvLayer = Layer.provideMerge(KV.layer, envLayer);
   const repositoryLayer = Layer.provideMerge(Repository.layer, d1Layer);
   const requestLayer = Layer.succeedContext(
     Context.make(CurrentRequest, request),
@@ -26,7 +24,6 @@ const makeAppLayer = (env: Env, request: Request) => {
   const productRepositoryLayer = Layer.provideMerge(ProductRepository.layer, shopifyLayer);
   return Layer.mergeAll(
     d1Layer,
-    kvLayer,
     repositoryLayer,
     shopifyLayer,
     productRepositoryLayer,
@@ -39,7 +36,7 @@ const makeAppLayer = (env: Env, request: Request) => {
  * Builds a per-request `ManagedRuntime` and returns a `runEffect` function for
  * HTTP request handlers (fetch, server functions).
  *
- * `ManagedRuntime` memoizes the layer build so services (`D1`, `KV`,
+ * `ManagedRuntime` memoizes the layer build so services (`D1`,
  * `Repository`, `Shopify`, …) are constructed once per request and reused
  * across every `runEffect` call within that request, rather than being rebuilt
  * on each invocation.

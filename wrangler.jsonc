@@ -26,12 +26,6 @@
       "database_id": "shopify-app-d1-local"
     }
   ],
-  "kv_namespaces": [
-    {
-      "binding": "KV",
-      "id": "353a94f63ff54720a0023ec48a38cb8f"
-    }
-  ],
   "env": {
     "production": {
       "name": "tanstack-cloudflare-effect-shopify-app",
@@ -45,12 +39,6 @@
           "database_id": "797acfa1-083f-40c3-8331-c0b6539567d6"
         }
       ],
-      "kv_namespaces": [
-        {
-          "binding": "KV",
-          "id": "353a94f63ff54720a0023ec48a38cb8f"
-        }
-      ]
     }
   }
 }
