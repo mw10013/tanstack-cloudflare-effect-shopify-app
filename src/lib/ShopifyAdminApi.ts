@@ -31,10 +31,14 @@ export class ShopifyAdminApi extends Context.Service<ShopifyAdminApi>()(
           );
         },
       );
-      const graphqlJson = Effect.fn("ShopifyAdminApi.graphqlJson")(
-        function* (query: string, options?: ShopifyGraphqlOptions) {
+      const graphqlDecode = Effect.fn("ShopifyAdminApi.graphqlDecode")(
+        function* <A>(
+          schema: Schema.Decoder<A>,
+          query: string,
+          options?: ShopifyGraphqlOptions,
+        ) {
           const response = yield* graphql(query, options);
-          return yield* Effect.tryPromise({
+          const json = yield* Effect.tryPromise({
             try: () => response.json(),
             catch: (cause) =>
               new ShopifyAdminApiError({
@@ -42,15 +46,6 @@ export class ShopifyAdminApi extends Context.Service<ShopifyAdminApi>()(
                 cause,
               }),
           });
-        },
-      );
-      const graphqlDecode = Effect.fn("ShopifyAdminApi.graphqlDecode")(
-        function* <A>(
-          schema: Schema.Decoder<A>,
-          query: string,
-          options?: ShopifyGraphqlOptions,
-        ) {
-          const json = yield* graphqlJson(query, options);
           return yield* Effect.try({
             try: () => Schema.decodeUnknownSync(schema)(json),
             catch: (cause) =>
@@ -63,7 +58,6 @@ export class ShopifyAdminApi extends Context.Service<ShopifyAdminApi>()(
       );
       return {
         graphql,
-        graphqlJson,
         graphqlDecode,
       };
     }),
