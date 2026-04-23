@@ -55,9 +55,11 @@ pnpm typecheck          # TypeScript type checking (includes wrangler types gene
 pnpm lint               # Run ESLint
 pnpm test               # Run all tests with Vitest.
 npm run test:e2e --     # Playwright via npm (uses pnpm exec in script); pass args after -- and may be helpful to use --trace on
+pnpm graphql-codegen    # Validate #graphql template literal strings against the Shopify Admin schema
 ```
 
 - Run typecheck and lint after generating code. Not necessary if just research.
+- Run `pnpm graphql-codegen` after any change to `#graphql` template literal strings.
 
 ## Server Log Monitoring
 
