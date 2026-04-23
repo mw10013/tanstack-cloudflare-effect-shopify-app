@@ -2,105 +2,24 @@ import * as React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
-import * as Domain from "@/lib/Domain";
-import { Shopify } from "@/lib/Shopify";
+import { ProductRepository } from "@/lib/ProductRepository";
 import { shopifyServerFnMiddleware } from "@/lib/ShopifyServerFnMiddleware";
 
-const ProductCreateResponse = Schema.Struct({
-  productCreate: Schema.optional(
-    Schema.Struct({ product: Schema.optional(Domain.Product) }),
-  ),
-});
-
-const ProductVariantsBulkUpdateResponse = Schema.Struct({
-  productVariantsBulkUpdate: Schema.optional(
-    Schema.Struct({ productVariants: Schema.optional(Schema.Array(Domain.ProductVariant)) }),
-  ),
-});
-
-/**
- * Creates a demo product via Admin GraphQL using authenticated middleware
- * context (`context.runEffect`) and `ShopifyAdminApi` service access.
- *
- * Auth is intentionally delegated to `shopifyServerFnMiddleware` so business
- * logic stays free of request/session-token handling.
- */
 const generateProduct = createServerFn({ method: "POST" })
   .middleware([shopifyServerFnMiddleware])
   .handler(({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
-        const shopify = yield* Shopify;
+        const products = yield* ProductRepository;
         const color = ["Red", "Orange", "Yellow", "Green"][Math.floor(Math.random() * 4)];
-        const productCreateJson = yield* shopify.graphqlDecode(
-          ProductCreateResponse,
-          `#graphql
-          mutation populateProduct($product: ProductCreateInput!) {
-            productCreate(product: $product) {
-              product {
-                id
-                title
-                handle
-                status
-                variants(first: 10) {
-                  edges {
-                    node {
-                      id
-                      price
-                      barcode
-                      createdAt
-                    }
-                  }
-                }
-              }
-            }
-          }`,
-          {
-            variables: {
-              product: {
-                title: `${color} Snowboard`,
-              },
-            },
-          },
-        );
-        const product = productCreateJson.productCreate?.product;
-        if (!product) {
-          return yield* Effect.fail(new Error("Product create failed"));
-        }
-
+        const product = yield* products.createProduct(`${color} Snowboard`);
+        if (!product) return yield* Effect.fail(new Error("Product create failed"));
         const variantId = product.variants.edges[0]?.node.id;
-        if (!variantId) {
-          return yield* Effect.fail(new Error("Created product has no variant"));
-        }
-
-        const productVariantsBulkUpdateJson = yield* shopify.graphqlDecode(
-          ProductVariantsBulkUpdateResponse,
-          `#graphql
-          mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-              productVariants {
-                id
-                price
-                barcode
-                createdAt
-              }
-            }
-          }`,
-          {
-            variables: {
-              productId: product.id,
-              variants: [{ id: variantId, price: "100.00" }],
-            },
-          },
-        );
-
-        const variant = productVariantsBulkUpdateJson.productVariantsBulkUpdate?.productVariants;
-        if (!variant) {
-          return yield* Effect.fail(new Error("Product variant update failed"));
-        }
-
+        if (!variantId) return yield* Effect.fail(new Error("Created product has no variant"));
+        const variant = yield* products.updateVariantsBulk(product.id, [{ id: variantId, price: "100.00" }]);
+        if (!variant) return yield* Effect.fail(new Error("Product variant update failed"));
         return { product, variant };
       }),
     ),

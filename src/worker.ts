@@ -6,6 +6,7 @@ import * as Exit from "effect/Exit";
 import { D1 } from "@/lib/D1";
 import { KV } from "@/lib/KV";
 import { makeEnvLayer, makeLoggerLayer } from "@/lib/LayerEx";
+import { ProductRepository } from "@/lib/ProductRepository";
 import { Repository } from "@/lib/Repository";
 import { CurrentRequest } from "@/lib/CurrentRequest";
 import { Shopify } from "@/lib/Shopify";
@@ -22,11 +23,13 @@ const makeAppLayer = (env: Env, request: Request) => {
     Shopify.layer,
     Layer.merge(repositoryLayer, requestLayer),
   );
+  const productRepositoryLayer = Layer.provideMerge(ProductRepository.layer, shopifyLayer);
   return Layer.mergeAll(
     d1Layer,
     kvLayer,
     repositoryLayer,
     shopifyLayer,
+    productRepositoryLayer,
     requestLayer,
     makeLoggerLayer(env),
   );
