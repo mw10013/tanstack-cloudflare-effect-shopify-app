@@ -1,6 +1,6 @@
 import "@shopify/shopify-api/adapters/web-api";
 import * as ShopifyApi from "@shopify/shopify-api";
-import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
+import { Config, Context, Effect, Layer, Option, Redacted, Ref, Schema } from "effect";
 
 import * as Domain from "@/lib/Domain";
 import { Repository } from "@/lib/Repository";
@@ -149,6 +149,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     const repository = yield* Repository;
     const config = yield* shopifyConfig;
     const shopify = makeShopifyApi(config);
+    const adminContextRef = yield* Ref.make<Option.Option<ShopifyAdminContext>>(Option.none());
     const storeSession = Effect.fn("Shopify.storeSession")(function* (
       session: ShopifyApi.Session,
     ) {
@@ -360,7 +361,9 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
           Option.isSome(existingSession) &&
           existingSession.value.isActive(undefined, WITHIN_MILLISECONDS_OF_EXPIRY)
         ) {
-          return buildAdminContext(shopify, existingSession.value);
+          const ctx = buildAdminContext(shopify, existingSession.value);
+          yield* Ref.set(adminContextRef, Option.some(ctx));
+          return ctx;
         }
 
         const { session } = yield* tryShopifyPromise(() =>
@@ -371,7 +374,9 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
           }),
         );
         yield* storeSession(session);
-        return buildAdminContext(shopify, session);
+        const ctx = buildAdminContext(shopify, session);
+        yield* Ref.set(adminContextRef, Option.some(ctx));
+        return ctx;
       },
     );
     const login = Effect.fn("Shopify.login")(function* (request: Request) {
@@ -414,6 +419,21 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         shopify.session.getOfflineId(shop),
       ).pipe(Effect.mapError((cause) => new ShopifyError({ message: "Invalid session id", cause })));
     });
+    const graphqlDecode = Effect.fn("Shopify.graphqlDecode")(function* <A>(
+      schema: Schema.Decoder<A>,
+      query: string,
+      options?: { readonly variables?: Record<string, unknown> },
+    ) {
+      const admin = yield* Ref.get(adminContextRef).pipe(
+        Effect.flatMap(Effect.fromOption),
+        Effect.mapError(() => new ShopifyError({ message: "authenticateAdmin must be called before graphqlDecode", cause: undefined })),
+      );
+      const { data } = yield* admin.graphql(query, options);
+      return yield* Effect.try({
+        try: () => Schema.decodeUnknownSync(schema)(data),
+        catch: (cause) => new ShopifyError({ message: "Admin GraphQL response validation failed", cause }),
+      });
+    });
     return {
       config,
       authenticateAdmin,
@@ -425,6 +445,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       deleteSessionsByShop,
       updateSessionScope,
       offlineSessionId,
+      graphqlDecode,
     };
   }),
 }) {
