@@ -90,6 +90,22 @@ export default {
 
 Template (`refs/shopify-app-template/.graphqlrc.ts`) also adds extension project entries for Shopify Functions with their own `schema.graphql`.
 
+## VSCode Extension: GraphQL Language Feature Support
+
+Extension: `GraphQL.vscode-graphql` + `GraphQL.vscode-graphql-syntax`
+
+Reads `.graphqlrc.ts` to provide hover, autocomplete, validation, and go-to-definition inside `#graphql` template literals. **Not currently installed in this project** (no `.vscode/extensions.json`).
+
+This project's `graphqlDecode` wrapper takes `query: string` and derives return types from the `Schema.Decoder<A>` argument — not from codegen-generated operation types. So the generated `admin.generated.d.ts` types are never referenced and IDE type inference on responses comes from Effect Schema, not the extension.
+
+The extension is of marginal utility as-is but could become more useful as the project grows and more queries are added. Known limitations for `#graphql` template literals vs standalone `.graphql` files:
+
+- **In-editor query execution broken** — requires at least one standalone `.graphql` file; template-literal-only projects can't run queries from the editor ([issue #2353](https://github.com/graphql/graphiql/issues/2353))
+- **Fragment interpolation kills intellisense** — `${SomeFragment}` expressions break autocomplete ([vscode-graphql issue #123](https://github.com/graphql/vscode-graphql/issues/123))
+- **TypeScript generics break everything** — `gql<SomeType>` syntax kills highlighting, autocomplete, and hover ([issue #2356](https://github.com/graphql/graphiql/issues/2356))
+
+None of these currently apply to this project (no fragment interpolation, no TS generics on the tag, no in-editor execution needed).
+
 ## Generated Types and `any` Scalars
 
 `src/types/admin.types.d.ts` (69k lines) contains the full Admin API schema. The 14 `any` occurrences are all **GraphQL custom scalars**:
