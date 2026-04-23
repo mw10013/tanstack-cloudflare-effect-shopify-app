@@ -3,7 +3,6 @@ import { createMiddleware } from "@tanstack/react-start";
 import { Effect } from "effect";
 
 import { CurrentRequest } from "@/lib/CurrentRequest";
-import { ShopifyAdminApi } from "@/lib/ShopifyAdminApi";
 import { Shopify } from "@/lib/Shopify";
 
 type ShopifyGlobal = ReturnType<typeof useAppBridge>;
@@ -55,30 +54,5 @@ export const shopifyServerFnMiddleware = createMiddleware({ type: "function" })
           : `Shopify admin auth failed (${String(auth.status)})`,
       );
     }
-    const baseRunEffect = context.runEffect;
-    /**
-     * Exact runtime requirement accepted by worker-level `runEffect`.
-     *
-     * We derive this from `baseRunEffect` so middleware wrappers stay aligned
-     * with `makeRunEffect` in `src/worker.ts` and cannot accidentally accept
-     * effects that require services outside the app runtime layer.
-     */
-    type RuntimeRequirements = Parameters<typeof baseRunEffect>[0] extends Effect.Effect<
-      unknown,
-      unknown,
-      infer R
-    >
-      ? R
-      : never;
-    const runEffect = <A, E, R extends RuntimeRequirements>(
-      effect: Effect.Effect<A, E, R | ShopifyAdminApi>,
-    ) =>
-      baseRunEffect(
-        effect.pipe(Effect.provide(ShopifyAdminApi.layerFor(auth))) as Effect.Effect<
-          A,
-          E,
-          RuntimeRequirements
-        >,
-      );
-    return next({ context: { admin: auth, session: auth.session, runEffect } });
+    return next({ context: { admin: auth, session: auth.session } });
   });

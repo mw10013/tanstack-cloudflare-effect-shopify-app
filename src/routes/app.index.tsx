@@ -5,7 +5,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { Effect, Schema } from "effect";
 
 import * as Domain from "@/lib/Domain";
-import { ShopifyAdminApi } from "@/lib/ShopifyAdminApi";
+import { Shopify } from "@/lib/Shopify";
 import { shopifyServerFnMiddleware } from "@/lib/ShopifyServerFnMiddleware";
 
 const ProductCreateResponse = Schema.Struct({
@@ -32,9 +32,9 @@ const generateProduct = createServerFn({ method: "POST" })
   .handler(({ context: { runEffect } }) =>
     runEffect(
       Effect.gen(function* () {
-        const adminApi = yield* ShopifyAdminApi;
+        const shopify = yield* Shopify;
         const color = ["Red", "Orange", "Yellow", "Green"][Math.floor(Math.random() * 4)];
-        const productCreateJson = yield* adminApi.graphqlDecode(
+        const productCreateJson = yield* shopify.graphqlDecode(
           ProductCreateResponse,
           `#graphql
           mutation populateProduct($product: ProductCreateInput!) {
@@ -75,7 +75,7 @@ const generateProduct = createServerFn({ method: "POST" })
           return yield* Effect.fail(new Error("Created product has no variant"));
         }
 
-        const productVariantsBulkUpdateJson = yield* adminApi.graphqlDecode(
+        const productVariantsBulkUpdateJson = yield* shopify.graphqlDecode(
           ProductVariantsBulkUpdateResponse,
           `#graphql
           mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
