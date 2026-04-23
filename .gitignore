@@ -32,4 +32,4 @@ test/browser/__screenshots__/
 
 CLAUDE.md
 
-src/types/
+.codegen/

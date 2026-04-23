@@ -10,7 +10,7 @@ const config: IGraphQLConfig = {
       apiType: ApiType.Admin,
       apiVersion: ApiVersion.January26,
       documents: ["./src/**/*.{js,ts,jsx,tsx}"],
-      outputDir: "./src/types",
+      outputDir: "./.codegen",
     }),
   },
 };

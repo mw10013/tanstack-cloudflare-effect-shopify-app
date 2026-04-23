@@ -7,7 +7,7 @@ Already configured but not running:
 - `.graphqlrc.ts` — configured with `ApiType.Admin`, `ApiVersion.January26`, scans `./src/**/*.{js,ts,jsx,tsx}`, outputs to `./src/types`
 - `package.json` — has `"graphql-codegen": "graphql-codegen"` script and `@shopify/api-codegen-preset@2.0.0` devDependency
 - `src/lib/ProductRepository.ts` — uses `#graphql` tagged template literals (lines 28, 62)
-- `./src/types` — created on first codegen run; contains `admin.types.d.ts` (full schema) and `admin.generated.d.ts` (operation-specific types)
+- `.codegen/` — output dir; gitignored; created on first codegen run; contains `admin.types.d.ts` (full schema) and `admin.generated.d.ts` (operation-specific types)
 
 ## Shopify Recommendation
 
@@ -82,7 +82,7 @@ export default {
       apiType: ApiType.Admin,
       apiVersion: ApiVersion.January26,
       documents: ["./src/**/*.{js,ts,jsx,tsx}"],
-      outputDir: "./src/types",
+      outputDir: "./.codegen",
     }),
   },
 };
@@ -139,7 +139,7 @@ scalars: {
 }
 ```
 
-Since we're only using codegen for **validation**, not importing the generated types, these `any`s are irrelevant to the app. The lint errors from `admin.types.d.ts` should be suppressed by adding `src/types` to the lint ignore list.
+Since we're only using codegen for **validation**, not importing the generated types, these `any`s are irrelevant to the app. Output goes to `.codegen/` which is gitignored and outside `src/`, so no lint errors.
 
 ## Summary
 
@@ -151,5 +151,5 @@ Since we're only using codegen for **validation**, not importing the generated t
 | Script | `pnpm graphql-codegen` (already in package.json) |
 | Schema proxy | `https://shopify.dev/admin-graphql-direct-proxy/{version}` |
 | GraphiQL | https://shopify.dev/docs/api/usage/api-exploration/admin-graphiql-explorer |
-| Generated types dir | `./src/types` (`admin.types.d.ts`, `admin.generated.d.ts`) |
+| Generated types dir | `.codegen/` (gitignored; `admin.types.d.ts`, `admin.generated.d.ts`) |
 | Validation use | Run codegen in CI; failure = invalid GraphQL |
