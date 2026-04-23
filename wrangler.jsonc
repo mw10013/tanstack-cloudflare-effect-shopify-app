@@ -3,6 +3,7 @@
   "name": "tanstack-cloudflare-effect-shopify-app-local",
   "compatibility_date": "2026-04-11",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "87997fc2724b0127effb8e4524989975",
   "main": "./src/worker.ts",
   "vars": {
     "ENVIRONMENT": "local"
@@ -21,8 +22,8 @@
   "d1_databases": [
     {
       "binding": "D1",
-      "database_name": "shopify-app-d1-local",
-      "database_id": "shopify-app-d1-local"
+      "database_name": "tanstack-cloudflare-effect-shopify-app-d1-local",
+      "database_id": "tanstack-cloudflare-effect-shopify-app-d1-local"
     }
   ],
   "env": {
@@ -35,8 +36,8 @@
       "d1_databases": [
         {
           "binding": "D1",
-          "database_name": "shopify-app-d1-staging",
-          "database_id": "<staging-d1-database-id>"
+          "database_name": "tanstack-cloudflare-effect-shopify-app-d1-staging",
+          "database_id": "3747a7d3-da53-49c2-b4a8-51468665dee0"
         }
       ],
     },
@@ -49,7 +50,7 @@
       "d1_databases": [
         {
           "binding": "D1",
-          "database_name": "shopify-app-d1-production",
+          "database_name": "tanstack-cloudflare-effect-shopify-app-d1-production",
           "database_id": "797acfa1-083f-40c3-8331-c0b6539567d6"
         }
       ],

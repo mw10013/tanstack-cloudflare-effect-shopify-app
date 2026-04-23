@@ -28,8 +28,8 @@ pnpm d1:reset:staging
 
 # get credentials from Shopify CLI, then set as wrangler secrets
 shopify app env show --config staging
-wrangler secret put SHOPIFY_API_KEY --env staging
-wrangler secret put SHOPIFY_API_SECRET --env staging
+pnpm exec wrangler secret put SHOPIFY_API_KEY --env staging
+pnpm exec wrangler secret put SHOPIFY_API_SECRET --env staging
 ```
 
 Update `SHOPIFY_APP_URL` in `wrangler.jsonc` `env.staging.vars` with the actual workers.dev URL after first deploy.
