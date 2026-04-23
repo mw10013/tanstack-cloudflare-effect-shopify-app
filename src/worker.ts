@@ -1,6 +1,6 @@
 import { isNotFound, isRedirect } from "@tanstack/react-router";
 import serverEntry from "@tanstack/react-start/server-entry";
-import { Cause, Effect, Layer, Context } from "effect";
+import { Cause, Effect, Layer, Context, ManagedRuntime } from "effect";
 import * as Exit from "effect/Exit";
 
 import { D1 } from "@/lib/D1";
@@ -41,7 +41,7 @@ import { Shopify } from "@/lib/Shopify";
  * server context that would otherwise be lost after `ShallowErrorPlugin`
  * strips everything except `.message`.
  */
-const makeRunEffect = (env: Env, request: Request) => {
+const makeAppLayer = (env: Env, request: Request) => {
   const envLayer = makeEnvLayer(env);
   const d1Layer = Layer.provideMerge(D1.layer, envLayer);
   const kvLayer = Layer.provideMerge(KV.layer, envLayer);
@@ -53,7 +53,7 @@ const makeRunEffect = (env: Env, request: Request) => {
     Shopify.layer,
     Layer.merge(repositoryLayer, requestLayer),
   );
-  const runtimeLayer = Layer.mergeAll(
+  return Layer.mergeAll(
     d1Layer,
     kvLayer,
     repositoryLayer,
@@ -61,12 +61,15 @@ const makeRunEffect = (env: Env, request: Request) => {
     requestLayer,
     makeLoggerLayer(env),
   );
-  return async <A, E>(
-    effect: Effect.Effect<A, E, Layer.Success<typeof runtimeLayer>>,
+};
+
+const makeRunEffect = (env: Env, request: Request) => {
+  const appLayer = makeAppLayer(env, request);
+  const managedRuntime = ManagedRuntime.make(appLayer);
+  const runEffect = async <A, E>(
+    effect: Effect.Effect<A, E, Layer.Success<typeof appLayer>>,
   ): Promise<A> => {
-    const exit = await Effect.runPromiseExit(
-      Effect.provide(effect, runtimeLayer),
-    );
+    const exit = await managedRuntime.runPromiseExit(effect);
     if (Exit.isSuccess(exit)) return exit.value;
     const squashed = Cause.squash(exit.cause);
     // oxlint-disable-next-line @typescript-eslint/only-throw-error -- redirect is a Response, notFound is a plain object; TanStack expects these thrown as-is
@@ -81,6 +84,7 @@ const makeRunEffect = (env: Env, request: Request) => {
     }
     throw new Error(Cause.pretty(exit.cause));
   };
+  return { runEffect, managedRuntime };
 };
 
 /**
@@ -105,7 +109,7 @@ const makeRunEffect = (env: Env, request: Request) => {
  *   https://tanstack.com/start/latest/docs/framework/react/guide/server-entry-point#request-context
  */
 export interface ServerContext {
-  runEffect: ReturnType<typeof makeRunEffect>;
+  runEffect: ReturnType<typeof makeRunEffect>["runEffect"];
 }
 
 declare module "@tanstack/react-start" {
@@ -115,9 +119,9 @@ declare module "@tanstack/react-start" {
 }
 
 export default {
-  fetch(request, env, _ctx) {
-    const runEffect = makeRunEffect(env, request);
-    return runEffect(
+  fetch(request, env, ctx) {
+    const { runEffect, managedRuntime } = makeRunEffect(env, request);
+    const responsePromise = runEffect(
       Effect.gen(function* () {
         const response = yield* Effect.tryPromise({
           try: async () =>
@@ -137,5 +141,8 @@ export default {
         return yield* shopify.withShopifyDocumentHeaders(request, response);
       }),
     );
+    // Keep the isolate alive until services are torn down after the response is sent.
+    ctx.waitUntil(responsePromise.finally(() => managedRuntime.dispose()));
+    return responsePromise;
   },
 } satisfies ExportedHandler<Env>;
