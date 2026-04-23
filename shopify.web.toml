@@ -1,4 +1,4 @@
-name = "tanstack-cloudflare-effect-app"
+name = "tcesa"
 roles = ["frontend", "backend"]
 webhooks_path = "/webhooks/app/uninstalled"
 port = 3200

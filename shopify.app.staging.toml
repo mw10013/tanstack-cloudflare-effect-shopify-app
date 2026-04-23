@@ -1,12 +1,13 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "45da92e216191f0903b247d491eba3ae"
-name = "tanstack-start-app-staging"
+client_id = "0b5c90a43c6e2944ad31c5eb95efbcfe"
+name = "tcesa-staging"
 application_url = "https://example.com"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
+include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-07"

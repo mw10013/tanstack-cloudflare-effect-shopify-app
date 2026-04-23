@@ -11,7 +11,7 @@ Port of the Shopify App Template to TanStack Start + Cloudflare Workers + Effect
 pnpm i
 cp .env.example .env
 shopify app config link --config staging
-#  - App name: tanstack-start-app-staging
+#  - App name: tcesa-staging
 pnpm d1:reset
 
 # every time
