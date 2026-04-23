@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "f7a48bfb067cbb33492238c7c6424c1d"
-name = "tanstack-cloudflare-effect-app"
+client_id = "45da92e216191f0903b247d491eba3ae"
+name = "tanstack-start-app-staging"
 application_url = "https://example.com"
 embedded = true
 
