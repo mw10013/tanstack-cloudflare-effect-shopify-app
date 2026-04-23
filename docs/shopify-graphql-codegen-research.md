@@ -7,7 +7,7 @@ Already configured but not running:
 - `.graphqlrc.ts` — configured with `ApiType.Admin`, `ApiVersion.January26`, scans `./src/**/*.{js,ts,jsx,tsx}`, outputs to `./src/types`
 - `package.json` — has `"graphql-codegen": "graphql-codegen"` script and `@shopify/api-codegen-preset@2.0.0` devDependency
 - `src/lib/ProductRepository.ts` — uses `#graphql` tagged template literals (lines 28, 62)
-- `./src/types` — does not exist yet; created on first codegen run
+- `./src/types` — created on first codegen run; contains `admin.types.d.ts` (full schema) and `admin.generated.d.ts` (operation-specific types)
 
 ## Shopify Recommendation
 
@@ -90,6 +90,41 @@ export default {
 
 Template (`refs/shopify-app-template/.graphqlrc.ts`) also adds extension project entries for Shopify Functions with their own `schema.graphql`.
 
+## Generated Types and `any` Scalars
+
+`src/types/admin.types.d.ts` (69k lines) contains the full Admin API schema. The 14 `any` occurrences are all **GraphQL custom scalars**:
+
+```ts
+export type Scalars = {
+  ID: { input: string; output: string; }    // built-in — typed
+  String: { input: string; output: string; } // built-in — typed
+  // ...
+  DateTime: { input: any; output: any; }    // custom — no info
+  JSON:     { input: any; output: any; }    // custom — no info
+  Money:    { input: any; output: any; }    // custom — no info
+  URL:      { input: any; output: any; }    // custom — no info
+  // etc.
+};
+```
+
+The 5 built-in GraphQL scalars are typed because the spec defines their TS equivalents. Shopify-proprietary scalars (`DateTime`, `Money`, `URL`, `ARN`, `HTML`, etc.) are opaque to codegen — the schema declares them but says nothing about their serialized TypeScript shape. `@shopify/api-codegen-preset` ships no scalar mappings, so codegen falls back to `any`.
+
+Fix requires a `scalars` config mapping each custom scalar to its actual TS type:
+```ts
+scalars: {
+  DateTime: "string",
+  Date: "string",
+  URL: "string",
+  Money: "string",
+  HTML: "string",
+  JSON: "Record<string, unknown>",
+  UnsignedInt64: "string",
+  // ...
+}
+```
+
+Since we're only using codegen for **validation**, not importing the generated types, these `any`s are irrelevant to the app. The lint errors from `admin.types.d.ts` should be suppressed by adding `src/types` to the lint ignore list.
+
 ## Summary
 
 | Item | Value |
@@ -100,5 +135,5 @@ Template (`refs/shopify-app-template/.graphqlrc.ts`) also adds extension project
 | Script | `pnpm graphql-codegen` (already in package.json) |
 | Schema proxy | `https://shopify.dev/admin-graphql-direct-proxy/{version}` |
 | GraphiQL | https://shopify.dev/docs/api/usage/api-exploration/admin-graphiql-explorer |
-| Generated types dir | `./src/types` (not yet created) |
+| Generated types dir | `./src/types` (`admin.types.d.ts`, `admin.generated.d.ts`) |
 | Validation use | Run codegen in CI; failure = invalid GraphQL |

@@ -45,8 +45,8 @@ importers:
         specifier: 1.167.8
         version: 1.167.8(@tanstack/react-router@1.168.7(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.3))
       effect:
-        specifier: 4.0.0-beta.47
-        version: 4.0.0-beta.47
+        specifier: 4.0.0-beta.52
+        version: 4.0.0-beta.52
       react:
         specifier: 19.2.3
         version: 19.2.3
@@ -70,8 +70,11 @@ importers:
         specifier: 0.14.3
         version: 0.14.3(@vitest/runner@4.1.4)(@vitest/snapshot@4.1.4)(vitest@4.1.4)
       '@effect/vitest':
-        specifier: 4.0.0-beta.47
-        version: 4.0.0-beta.47(effect@4.0.0-beta.47)(vitest@4.1.4)
+        specifier: 4.0.0-beta.52
+        version: 4.0.0-beta.52(effect@4.0.0-beta.52)(vitest@4.1.4)
+      '@graphql-codegen/cli':
+        specifier: 6.3.1
+        version: 6.3.1(@parcel/watcher@2.5.6)(@types/node@25.0.3)(graphql@16.13.2)(typescript@5.9.3)
       '@playwright/test':
         specifier: 1.57.0
         version: 1.57.0
@@ -361,10 +364,10 @@ packages:
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
     engines: {node: '>=12'}
 
-  '@effect/vitest@4.0.0-beta.47':
-    resolution: {integrity: sha512-1KdMUseTTLP+OeEmWwN3PzyMrhHBy47tHol2lotl+GkrmGameXhtD8xFfiO4BIj92jKMY3RBTkIemVBWaG8UyA==}
+  '@effect/vitest@4.0.0-beta.52':
+    resolution: {integrity: sha512-xFHdZ9iwfbtfsqKEli0ZrowLijosWh3QUnVYvV3gxkWuU2oMfgG/FiA6jw9b2UkdqKA+X9uUFwBALVFK59ncKA==}
     peerDependencies:
-      effect: ^4.0.0-beta.47
+      effect: ^4.0.0-beta.52
       vitest: ^3.0.0 || ^4.0.0
 
   '@emnapi/runtime@1.9.1':
@@ -746,8 +749,8 @@ packages:
     peerDependencies:
       graphql: ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0
 
-  '@graphql-codegen/cli@6.3.0':
-    resolution: {integrity: sha512-tlzSaM2oSnG6x8+QVc+cJ7NMJe+CN4tnSm/B8Uny/IpgSkAqP+RG8xaDxnrzwQZ+lz1ZXrBkNM6vzAGZhOaOGw==}
+  '@graphql-codegen/cli@6.3.1':
+    resolution: {integrity: sha512-I5KkyX1SgQZPojMeQTRydB6fml4cysZq/mIdhNW4rmqdoOcTgdMPq1Tl+wtRp1VpBAOrBazJUJh1nAqJMMSPIQ==}
     engines: {node: '>=16'}
     hasBin: true
     peerDependencies:
@@ -2730,8 +2733,8 @@ packages:
   dot-case@3.0.4:
     resolution: {integrity: sha512-Kv5nKlh6yRrdrGvxeJ2e5y2eRUpkUosIW4A2AS38zwSz27zu7ufDwQPi5Jhs3XAlGNetl3bmnGhQsMtkKJnj3w==}
 
-  effect@4.0.0-beta.47:
-    resolution: {integrity: sha512-MRrAO6Oof5TTgEo0Tb37d5G+vSRHopBhEImYiGjMDEpuBzHr4nKg5BeAwQGV1kdjZ9/DhxKVuFZKsF4Uw+KJog==}
+  effect@4.0.0-beta.52:
+    resolution: {integrity: sha512-Aa9T5CEV3pCoSDM8sOnalwYieJi5olb7vn8TbgMB3U1YGEOG9ypogng33qMFLKswZM2UimwrXL9Ri1x9Jo9z6w==}
 
   electron-to-chromium@1.5.331:
     resolution: {integrity: sha512-IbxXrsTlD3hRodkLnbxAPP4OuJYdWCeM3IOdT+CpcMoIwIoDfCmRpEtSPfwBXxVkg9xmBeY7Lz2Eo2TDn/HC3Q==}
@@ -3837,8 +3840,9 @@ packages:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
 
-  toml@3.0.0:
-    resolution: {integrity: sha512-y/mWCZinnvxjTKYhJ+pYxwD0mRLVvOtdS2Awbgxln6iEnt4rk0yBxeSBHkGJcPucRiG0e55mwWp+g/05rsrd6w==}
+  toml@4.1.1:
+    resolution: {integrity: sha512-EBJnVBr3dTXdA89WVFoAIPUqkBjxPMwRqsfuo1r240tKFHXv3zgca4+NJib/h6TyvGF7vOawz0jGuryJCdNHrw==}
+    engines: {node: '>=20'}
 
   totalist@3.0.1:
     resolution: {integrity: sha512-sf4i37nQ2LBx4m3wB74y+ubopq6W/dIzXg0FDGjsYnZHVa1Da8FH853wlL2gtUhg+xJXjfk3kUZS3BRoQeoQBQ==}
@@ -4451,9 +4455,9 @@ snapshots:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
 
-  '@effect/vitest@4.0.0-beta.47(effect@4.0.0-beta.47)(vitest@4.1.4)':
+  '@effect/vitest@4.0.0-beta.52(effect@4.0.0-beta.52)(vitest@4.1.4)':
     dependencies:
-      effect: 4.0.0-beta.47
+      effect: 4.0.0-beta.52
       vitest: 4.1.4(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(@vitest/browser-playwright@4.1.4)(msw@2.12.14(@types/node@25.0.3)(typescript@5.9.3))(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.3))
 
   '@emnapi/runtime@1.9.1':
@@ -4694,7 +4698,7 @@ snapshots:
       graphql: 16.13.2
       tslib: 2.8.1
 
-  '@graphql-codegen/cli@6.3.0(@parcel/watcher@2.5.6)(@types/node@25.0.3)(graphql@16.13.2)(typescript@5.9.3)':
+  '@graphql-codegen/cli@6.3.1(@parcel/watcher@2.5.6)(@types/node@25.0.3)(graphql@16.13.2)(typescript@5.9.3)':
     dependencies:
       '@babel/generator': 7.29.1
       '@babel/template': 7.28.6
@@ -5770,7 +5774,7 @@ snapshots:
 
   '@shopify/api-codegen-preset@2.0.0(@types/node@25.0.3)(typescript@5.9.3)':
     dependencies:
-      '@graphql-codegen/cli': 6.3.0(@parcel/watcher@2.5.6)(@types/node@25.0.3)(graphql@16.13.2)(typescript@5.9.3)
+      '@graphql-codegen/cli': 6.3.1(@parcel/watcher@2.5.6)(@types/node@25.0.3)(graphql@16.13.2)(typescript@5.9.3)
       '@graphql-codegen/introspection': 5.0.2(graphql@16.13.2)
       '@graphql-codegen/typescript': 5.0.10(graphql@16.13.2)
       '@parcel/watcher': 2.5.6
@@ -6779,7 +6783,7 @@ snapshots:
       no-case: 3.0.4
       tslib: 2.8.1
 
-  effect@4.0.0-beta.47:
+  effect@4.0.0-beta.52:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 4.6.0
@@ -6788,7 +6792,7 @@ snapshots:
       kubernetes-types: 1.30.0
       msgpackr: 1.11.9
       multipasta: 0.2.7
-      toml: 3.0.0
+      toml: 4.1.1
       uuid: 13.0.0
       yaml: 2.8.3
 
@@ -7945,7 +7949,7 @@ snapshots:
     dependencies:
       is-number: 7.0.0
 
-  toml@3.0.0: {}
+  toml@4.1.1: {}
 
   totalist@3.0.1: {}
 

@@ -31,3 +31,5 @@ test/browser/__screenshots__/
 !.env.playwright.example
 
 CLAUDE.md
+
+src/types/
