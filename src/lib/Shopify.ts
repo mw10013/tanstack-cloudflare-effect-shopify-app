@@ -428,7 +428,8 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         Effect.flatMap(Effect.fromOption),
         Effect.mapError(() => new ShopifyError({ message: "authenticateAdmin must be called before graphqlDecode", cause: undefined })),
       );
-      const { data } = yield* admin.graphql(query, options);
+      const { data, errors } = yield* admin.graphql(query, options);
+      if (errors) yield* Effect.fail(new ShopifyError({ message: errors.message ?? "Admin GraphQL request failed", cause: errors }));
       return yield* Effect.try({
         try: () => Schema.decodeUnknownSync(schema)(data),
         catch: (cause) => new ShopifyError({ message: "Admin GraphQL response validation failed", cause }),
