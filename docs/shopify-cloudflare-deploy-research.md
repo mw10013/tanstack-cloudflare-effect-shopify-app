@@ -136,47 +136,60 @@ Both must be in sync. If URLs change (e.g., custom domain), both must be redeplo
 
 ## Staging vs Production App Records
 
-Each environment requires its own Shopify app record (separate `client_id`) and its own Cloudflare Worker deployment. The `shopify.web.toml` is shared — it defines the dev server command and webhook path, which don't change per environment. Only the `shopify.app.*.toml` files differ.
+Two Shopify app records are sufficient for three environments. Local dev shares the staging app record — they never run simultaneously against the same store.
 
-### Config files per environment
+`shopify.web.toml` is shared across all environments. Only the `shopify.app.*.toml` files differ per app record.
 
-| File | Shared? | Purpose |
-|---|---|---|
-| `shopify.web.toml` | Yes — one file | Dev server command, webhook path, roles |
-| `shopify.app.tanstack-cloudflare-effect-app.toml` | Production only | `client_id`, `application_url`, `redirect_urls`, scopes |
-| `shopify.app.staging.toml` | Staging only | Same fields, different `client_id` and worker URL |
+### Environment mapping
+
+| Wrangler env | Shopify config | App record name | Purpose |
+|---|---|---|---|
+| default (no `--env`) | `staging` | `tanstack-cloudflare-effect-app-staging` | `pnpm dev` + local D1 |
+| `staging` | `staging` | `tanstack-cloudflare-effect-app-staging` | deployed staging worker |
+| `production` | `production` | `tanstack-cloudflare-effect-app-production` | deployed production worker |
+
+### Config files
+
+| File | Purpose |
+|---|---|
+| `shopify.web.toml` | Shared — dev server command, webhook path, roles |
+| `shopify.app.staging.toml` | Staging app record — `client_id`, URLs, scopes |
+| `shopify.app.production.toml` | Production app record — `client_id`, URLs, scopes |
+
+`shopify.app.tanstack-cloudflare-effect-app.toml` (current file) → rename to `shopify.app.production.toml`.
 
 ### Setup
 
-1. Create a second app record in Shopify Partner Dashboard (name it e.g. "tanstack-cloudflare-effect-app-staging").
-2. Link it from the project root:
+1. Create staging app record in Shopify Partner Dashboard (name: `tanstack-cloudflare-effect-app-staging`).
+2. Link it:
    ```bash
    shopify app config link
-   # CLI prompts: which app record? → select the staging app
-   # CLI prompts: config name? → enter "staging"
+   # CLI prompts: which app? → select staging record
+   # CLI prompts: config name? → staging
    # Creates: shopify.app.staging.toml
    ```
-3. The new toml gets its own `client_id` from the staging app record.
+3. Rename existing toml:
+   ```bash
+   mv shopify.app.tanstack-cloudflare-effect-app.toml shopify.app.production.toml
+   # Update name field inside: tanstack-cloudflare-effect-app-production
+   ```
 
 ### Switching between configs
 
-`shopify app config use` sets the active config for CLI commands (`shopify app dev`, `shopify app deploy`, `shopify app env show`):
+Pass `--config` per command (preferred over `shopify app config use`):
 
 ```bash
-shopify app config use staging        # activate staging — subsequent CLI commands target staging app
-shopify app config use tanstack-cloudflare-effect-app  # activate production
-```
-
-The active config is stored in `.shopify.app.toml` (gitignored). Alternatively, pass `--config` per command to avoid switching:
-
-```bash
+shopify app dev --config staging
 shopify app deploy --config staging
-shopify app deploy --config tanstack-cloudflare-effect-app
+shopify app deploy --config production
+shopify app env show --config production
 ```
 
-### Deploying staging
+`shopify app config use <name>` sets a persistent default (stored in `.shopify.app.toml`, gitignored) — useful if doing a run of commands against one env.
 
-Staging needs its own wrangler env in `wrangler.jsonc` (separate worker name, D1 database):
+### Staging wrangler env
+
+Add to `wrangler.jsonc`:
 
 ```jsonc
 "env": {
@@ -191,22 +204,24 @@ Staging needs its own wrangler env in `wrangler.jsonc` (separate worker name, D1
 }
 ```
 
-Deploy flow mirrors production but targets the staging env:
+### Deploying staging
 
 ```bash
-wrangler secret put SHOPIFY_API_SECRET --env staging   # staging app's secret
+wrangler secret put SHOPIFY_API_SECRET --env staging
 wrangler d1 migrations apply shopify-app-d1-staging --env staging --remote
 wrangler deploy --env staging
 shopify app deploy --config staging
 ```
 
-### Using production vs staging
+### Production vs staging at a glance
 
-| Action | Production | Staging |
+| | Production | Staging |
 |---|---|---|
+| Shopify config | `shopify.app.production.toml` | `shopify.app.staging.toml` |
 | Deploy worker | `wrangler deploy --env production` | `wrangler deploy --env staging` |
-| Deploy Shopify config | `shopify app deploy --config tanstack-cloudflare-effect-app` | `shopify app deploy --config staging` |
-| Install on dev store | Partner Dashboard → production app record | Partner Dashboard → staging app record |
+| Deploy Shopify config | `shopify app deploy --config production` | `shopify app deploy --config staging` |
+| Local dev | — | `shopify app dev --config staging` |
+| Install on dev store | Partner Dashboard → `tanstack-cloudflare-effect-app-production` | Partner Dashboard → `tanstack-cloudflare-effect-app-staging` |
 | Worker URL | `tanstack-cloudflare-effect-shopify-app.<account>.workers.dev` | `tanstack-cloudflare-effect-shopify-app-staging.<account>.workers.dev` |
 | D1 database | `shopify-app-d1-production` | `shopify-app-d1-staging` |
 
