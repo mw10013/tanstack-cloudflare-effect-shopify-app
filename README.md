@@ -41,6 +41,6 @@ pnpm deploy:staging
 shopify app deploy --config staging
 ```
 
-Install on dev store: Shopify Dev Dashboard → Apps → `tanstack-start-app-staging` → Test on development store.
+Install on dev store: Shopify Dev Dashboard → Apps → `tcesa-staging` → Test on development store.
 
 
