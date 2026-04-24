@@ -34,9 +34,17 @@ pnpm d1:reset:staging
 shopify app env show --config staging
 pnpm exec wrangler secret put SHOPIFY_API_KEY --env staging
 pnpm exec wrangler secret put SHOPIFY_API_SECRET --env staging
+```
 
-# every time
-pnpm deploy:staging
+Connect GitHub for automatic deploys on push:
+- Cloudflare Dashboard → Workers & Pages → `tcesa-staging` → Settings
+  - Git repository: connect to repo
+  - Build configuration
+    - Build command: `CLOUDFLARE_ENV=staging pnpm build`
+    - Deploy command: `pnpm exec wrangler deploy --env staging`
+
+```bash
+# every time (worker deploys automatically on push via Cloudflare Git integration)
 shopify app deploy --config staging
 ```
 

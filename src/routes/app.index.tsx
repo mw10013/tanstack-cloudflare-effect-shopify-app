@@ -31,7 +31,7 @@ export const Route = createFileRoute("/app/")({
 
 function AppIndex() {
   const shopify = useAppBridge();
-  const hasHydrated = useHydrated();
+  const hydrated = useHydrated();
   const [isLoading, setIsLoading] = React.useState(false);
   const [result, setResult] = React.useState<Awaited<ReturnType<typeof generateProduct>> | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -70,7 +70,7 @@ function AppIndex() {
 
   return (
     <s-page heading="Shopify app template">
-      {hasHydrated && (
+      {hydrated && (
         <s-button slot="primary-action" variant="primary" onClick={generate} {...(isLoading ? { loading: true } : {})}>
           Generate a product
         </s-button>
