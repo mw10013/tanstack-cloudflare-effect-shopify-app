@@ -34,6 +34,7 @@ pnpm d1:reset:staging
 shopify app env show --config staging
 pnpm exec wrangler secret put SHOPIFY_API_KEY --env staging
 pnpm exec wrangler secret put SHOPIFY_API_SECRET --env staging
+pnpm deploy:staging
 ```
 
 Connect GitHub for automatic deploys on push:
