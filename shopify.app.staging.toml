@@ -1,8 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "0b5c90a43c6e2944ad31c5eb95efbcfe"
+client_id = "ef96e2661ae7e32120c4f51629ad65b7"
 name = "tcesa-staging"
-application_url = "https://tcesa-staging.87997fc2724b0127effb8e4524989975.workers.dev"
+application_url = "https://tcesa-staging.mw10013.workers.dev"
 embedded = true
 
 [build]
@@ -16,4 +16,4 @@ api_version = "2026-07"
 scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://tcesa-staging.87997fc2724b0127effb8e4524989975.workers.dev/api/auth" ]
+redirect_urls = [ "https://tcesa-staging.mw10013.workers.dev/api/auth" ]
