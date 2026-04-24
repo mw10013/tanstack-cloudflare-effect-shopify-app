@@ -2,11 +2,7 @@
   "name": "tanstack-cloudflare-effect-shopify-app",
   "private": true,
   "type": "module",
-  "account_id": "87997fc2724b0127effb8e4524989975",
   "scripts": {
-    "shopify:dev": "shopify app dev",
-    "shopify:config:link": "shopify app config link",
-    "shopify:env:show": "shopify app env show",
     "dev": "mkdir -p logs && set -a && source .env && set +a && vite dev --port $PORT --force 2>&1 | tee logs/server.log",
     "build": "vite build",
     "build:staging": "CLOUDFLARE_ENV=staging pnpm build",
@@ -90,8 +86,8 @@
     "@cloudflare/vite-plugin": "1.31.2",
     "@cloudflare/vitest-pool-workers": "0.14.3",
     "@effect/vitest": "4.0.0-beta.52",
-    "@playwright/test": "1.57.0",
     "@graphql-codegen/cli": "6.3.1",
+    "@playwright/test": "1.57.0",
     "@shopify/api-codegen-preset": "2.0.0",
     "@shopify/polaris-types": "^1.0.6",
     "@tanstack/devtools-vite": "0.6.0",
@@ -118,5 +114,6 @@
   "engines": {
     "node": "24.14.0"
   },
-  "packageManager": "pnpm@10.17.1"
+  "packageManager": "pnpm@10.17.1",
+  "account_id": "87997fc2724b0127effb8e4524989975"
 }

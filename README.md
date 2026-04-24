@@ -4,37 +4,21 @@ Port of the Shopify App Template to TanStack Start + Cloudflare Workers + Effect
 
 ## Local development
 
-- Go through https://shopify.dev/docs/apps/build/scaffold-app to ensure Shopify account, cli, and store are set up.
+Prerequisites: Shopify account, CLI, and dev store — see https://shopify.dev/docs/apps/build/scaffold-app
 
 ```bash
 # first time
 pnpm i
 cp .env.example .env
-shopify app config link --config staging
-#  - App name: tcesa-staging
+# set client_id = "" in shopify.app.toml
 pnpm d1:reset
+shopify app dev
 
 # every time
 shopify app dev
 ```
 
-## Staging Deployment
-
-One-time setup:
-
-```bash
-# create D1 database, updates database_id in wrangler.jsonc automatically
-pnpm d1:reset:staging
-
-# get credentials from Shopify CLI, then set as wrangler secrets
-shopify app env show --config staging
-pnpm exec wrangler secret put SHOPIFY_API_KEY --env staging
-pnpm exec wrangler secret put SHOPIFY_API_SECRET --env staging
-```
-
-Update `SHOPIFY_APP_URL` in `wrangler.jsonc` `env.staging.vars` with the actual workers.dev URL after first deploy.
-
-Deploy:
+## Staging deployment
 
 ```bash
 pnpm deploy:staging
@@ -43,4 +27,14 @@ shopify app deploy --config staging
 
 Install on dev store: Shopify Dev Dashboard → Apps → `tcesa-staging` → Test on development store.
 
+### Initial infrastructure setup (one-time)
 
+```bash
+# create D1 database (updates database_id in wrangler.jsonc automatically)
+pnpm d1:reset:staging
+
+# set wrangler secrets from Shopify app credentials
+shopify app env show --config staging
+pnpm exec wrangler secret put SHOPIFY_API_KEY --env staging
+pnpm exec wrangler secret put SHOPIFY_API_SECRET --env staging
+```
