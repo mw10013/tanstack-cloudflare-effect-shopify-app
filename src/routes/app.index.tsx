@@ -101,14 +101,16 @@ function AppIndex() {
           </s-link>{" "}
           mutation in our API references.
         </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button onClick={generate} {...(isLoading ? { loading: true } : {})}>
-            Generate a product
-          </s-button>
-          {result?.product && (
-            <s-button onClick={editProduct}>Edit product</s-button>
-          )}
-        </s-stack>
+        {hydrated && (
+          <s-stack direction="inline" gap="base">
+            <s-button onClick={generate} {...(isLoading ? { loading: true } : {})}>
+              Generate a product
+            </s-button>
+            {result?.product && (
+              <s-button onClick={editProduct}>Edit product</s-button>
+            )}
+          </s-stack>
+        )}
         {error && (
           <s-section heading="Request failed">
             <s-paragraph>{error}</s-paragraph>
