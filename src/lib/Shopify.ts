@@ -371,6 +371,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
             shop: sessionShop,
             sessionToken,
             requestedTokenType: ShopifyApi.RequestedTokenType.OfflineAccessToken,
+            expiring: true,
           }),
         );
         yield* storeSession(session);
