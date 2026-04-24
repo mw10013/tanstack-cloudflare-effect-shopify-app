@@ -215,6 +215,25 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         yield* repository.updateSessionScope(id, scope);
       },
     );
+    const refreshOfflineToken = Effect.fn("Shopify.refreshOfflineToken")(
+      function* (shop: Domain.Shop, refreshToken: string) {
+        const { session } = yield* tryShopifyPromise(() =>
+          shopify.auth.refreshToken({ shop, refreshToken }),
+        );
+        yield* storeSession(session);
+        return session;
+      },
+    );
+    const ensureValidOfflineSession = Effect.fn("Shopify.ensureValidOfflineSession")(
+      function* (shop: Domain.Shop) {
+        const loaded = yield* loadSession(yield* offlineSessionId(shop));
+        if (Option.isNone(loaded)) return Option.none();
+        const session = loaded.value;
+        return session.isExpired(WITHIN_MILLISECONDS_OF_EXPIRY) && session.refreshToken
+          ? Option.some(yield* refreshOfflineToken(shop, session.refreshToken))
+          : Option.some(session);
+      },
+    );
     /**
      * Returns a Response with Shopify document headers applied when needed.
      *
@@ -446,6 +465,8 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       loadSession,
       deleteSessionsByShop,
       updateSessionScope,
+      refreshOfflineToken,
+      ensureValidOfflineSession,
       offlineSessionId,
       graphqlDecode,
     };

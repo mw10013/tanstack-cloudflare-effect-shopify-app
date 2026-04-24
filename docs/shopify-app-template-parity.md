@@ -25,7 +25,7 @@ Non-goals, explicitly out of scope for this parity pass:
 ## Status
 
 - [x] **Step 1** — `expiring: true` forwarded to `tokenExchange` ([src/lib/Shopify.ts:374](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L374))
-- [ ] Step 2 — `ensureValidOfflineSession`
+- [x] **Step 2** — `refreshOfflineToken` + `ensureValidOfflineSession` added ([src/lib/Shopify.ts:218-237](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L218-L237))
 - [ ] Step 3 — `authenticateWebhook`
 - [ ] Step 4 — `unauthenticatedAdmin`
 - [ ] Step 5 — 401 invalidation on admin GraphQL
@@ -84,7 +84,7 @@ Before the fix: token exchange defaulted `expiring` to `'0'`, the server never r
 
 After the fix: the persistence path in `storeSession` ([src/lib/Shopify.ts:182-183](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L182-L183)) now receives real `refreshToken` / `refreshTokenExpires` values for each new exchange. Existing non-expiring rows are migrated transparently on the next `authenticateAdmin` fall-through per [shopify-docs/.../offline-access-tokens.md:226-232](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/refs/shopify-docs/docs/apps/build/authentication-authorization/access-tokens/offline-access-tokens.md#L226-L232). Refresh itself is still not wired — Step 2 turns the stored refresh metadata into actual refresh behavior.
 
-### G2. No offline refresh helper for stale sessions
+### G2. No offline refresh helper for stale sessions — FIXED (Step 2)
 
 Template chain for "give me a usable offline session for this shop, refreshing if needed":
 
@@ -121,7 +121,33 @@ const {session} = await api.auth.refreshToken({
 return session;
 ```
 
-Port: none of `ensureValidOfflineSession`, `ensureOfflineTokenIsNotExpired`, or a wrapper over `api.auth.refreshToken` exist. `grep refreshToken src/` returns only schema/persist paths, no runtime refresh. The port's only happy path is: load → isActive → token exchange. There is no "load → expired → refresh → store" branch.
+Port now has both helpers on the `Shopify` service ([src/lib/Shopify.ts:218-237](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L218-L237)):
+
+```ts
+const refreshOfflineToken = Effect.fn("Shopify.refreshOfflineToken")(
+  function* (shop: Domain.Shop, refreshToken: string) {
+    const { session } = yield* tryShopifyPromise(() =>
+      shopify.auth.refreshToken({ shop, refreshToken }),
+    );
+    yield* storeSession(session);
+    return session;
+  },
+);
+const ensureValidOfflineSession = Effect.fn("Shopify.ensureValidOfflineSession")(
+  function* (shop: Domain.Shop) {
+    const loaded = yield* loadSession(yield* offlineSessionId(shop));
+    if (Option.isNone(loaded)) return Option.none();
+    const session = loaded.value;
+    return session.isExpired(WITHIN_MILLISECONDS_OF_EXPIRY) && session.refreshToken
+      ? Option.some(yield* refreshOfflineToken(shop, session.refreshToken))
+      : Option.some(session);
+  },
+);
+```
+
+Returns `Option<Session>` — idiomatic effect v4, consistent with `loadSession`. Refresh-and-store is wrapped in a single helper because template callers always pair them ([ensure-offline-token-is-not-expired.ts:22-28](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/refs/shopify-app-js/packages/apps/shopify-app-react-router/src/server/helpers/ensure-offline-token-is-not-expired.ts#L22-L28)).
+
+Note: `authenticateAdmin` is unchanged by design. The template's admin strategy falls through to `tokenExchange` (not refresh) when the stored session is inactive, since a fresh browser session token is always available in that path. Refresh is reserved for webhook / background contexts where there is no session token — which is exactly where Step 3 and Step 4 will plug `ensureValidOfflineSession` in.
 
 ### G3. No `authenticate.webhook(request)` equivalent
 
@@ -325,7 +351,7 @@ The port does not wire anything equivalent. Its current `withShopifyDocumentHead
 | Gap | Template location | Port state |
 | --- | --- | --- |
 | G1 | `token-exchange.ts:49-54` passes `expiring: true` | ✅ fixed in `Shopify.ts:374` |
-| G2 | `ensureValidOfflineSession`, `ensureOfflineTokenIsNotExpired`, `refreshToken` | no local equivalents |
+| G2 | `ensureValidOfflineSession`, `ensureOfflineTokenIsNotExpired`, `refreshToken` | ✅ fixed in `Shopify.ts:218-237` |
 | G3 | `authenticateWebhookFactory` returns `{payload, shop, topic, session, admin}` | only `validateWebhook` returns HMAC result |
 | G4 | `unauthenticatedAdminContextFactory(shop)` | no local equivalent |
 | G5 | `handleClientError` clears `session.accessToken` on 401 | GraphQL has no error hook |
@@ -407,45 +433,13 @@ Parity note: the template reads the flag via `config.future.expiringOfflineAcces
 
 Verification: `pnpm typecheck` and `pnpm lint` clean. Effect at runtime: new token exchanges now return `refresh_token` + `refresh_token_expires_in`, which the existing `storeSession` already persists ([src/lib/Shopify.ts:182-183](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L182-L183)). Until Step 2 lands, those values are stored but unused on read.
 
-### Step 2. Add `ensureValidOfflineSession(shop)` (closes G2)
+### Step 2. Add `ensureValidOfflineSession(shop)` (closes G2) — DONE
 
-New method on the `Shopify` service:
+Landed at [src/lib/Shopify.ts:218-237](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L218-L237). Both `refreshOfflineToken` and `ensureValidOfflineSession` are exposed on the `Shopify` service. No callers yet — Step 3 (`authenticateWebhook`) and Step 4 (`unauthenticatedAdmin`) will consume them.
 
-```ts
-// sketch; lives in src/lib/Shopify.ts
-const refreshOfflineToken = Effect.fn("Shopify.refreshOfflineToken")(function* (
-  shop: Domain.Shop,
-  refreshToken: string,
-) {
-  const { session } = yield* tryShopifyPromise(() =>
-    shopify.auth.refreshToken({ shop, refreshToken }),
-  );
-  yield* storeSession(session);
-  return session;
-});
+Migration behavior: with Step 1 done, existing non-expiring rows get migrated transparently the next time `authenticateAdmin` falls through to `tokenExchange` — per Shopify docs: "The migration can be done via a background job or during the next app launch. The original non-expiring token will be revoked upon successful exchange." ([offline-access-tokens.md:226-232](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/refs/shopify-docs/docs/apps/build/authentication-authorization/access-tokens/offline-access-tokens.md#L226-L232)). Until they migrate, `ensureValidOfflineSession` on a non-expiring row returns the row unchanged (no refresh path because `refreshToken` is null on pre-Step-1 rows) — correct behavior, since non-expiring tokens do not need refresh.
 
-const ensureValidOfflineSession = Effect.fn("Shopify.ensureValidOfflineSession")(function* (
-  shop: Domain.Shop,
-) {
-  const sessionId = yield* offlineSessionId(shop);
-  const loaded = yield* loadSession(sessionId);
-  if (Option.isNone(loaded)) return Option.none<ShopifyApi.Session>();
-
-  const session = loaded.value;
-  if (
-    session.isExpired(WITHIN_MILLISECONDS_OF_EXPIRY) &&
-    session.refreshToken
-  ) {
-    const refreshed = yield* refreshOfflineToken(shop, session.refreshToken);
-    return Option.some(refreshed);
-  }
-  return Option.some(session);
-});
-```
-
-Return `Option<Session>` rather than `Session | undefined` — consistent with `loadSession`'s existing return type ([src/lib/Shopify.ts:195-209](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L195-L209)) and idiomatic in effect v4.
-
-With Step 1 done, existing non-expiring rows will be migrated transparently the next time `authenticateAdmin` runs and falls through to `tokenExchange` — per Shopify docs: "The migration can be done via a background job or during the next app launch. The original non-expiring token will be revoked upon successful exchange." ([offline-access-tokens.md:226-232](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/refs/shopify-docs/docs/apps/build/authentication-authorization/access-tokens/offline-access-tokens.md#L226-L232)).
+Verification: `pnpm typecheck` and `pnpm lint` clean.
 
 ### Step 3. Add `authenticateWebhook` (closes G3)
 
@@ -688,7 +682,7 @@ These are template features worth naming so they don't creep into the port by ac
 Minimum viable parity:
 
 1. ~~**Step 1** (one-line `expiring: true`) — ships on its own, immediately unblocks refresh~~ ✅
-2. **Step 2** (`ensureValidOfflineSession`) — private helper; no public API impact yet
+2. ~~**Step 2** (`ensureValidOfflineSession`) — private helper; no public API impact yet~~ ✅
 3. **Step 3** (`authenticateWebhook`) — swap the two webhook routes to use it; measurable line-count reduction
 4. **Step 5** (401 invalidation) — small, isolated to `buildAdminContext`
 5. **Step 6** (structured recovery + middleware redirect) — user-visible improvement for expired browser session tokens
