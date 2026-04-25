@@ -4,7 +4,7 @@ Question: this port aims to mirror `refs/shopify-app-template` on TanStack Start
 
 ## Executive Summary
 
-- App Bridge — the runtime injected by `<script src=".../app-bridge.js" data-api-key=...>` — already monkey-patches `window.fetch` for embedded apps. It auto-attaches `Authorization: Bearer <id_token>` on same-origin requests and auto-retries on `401 + X-Shopify-Retry-Invalid-Session-Request: 1`.
+- App Bridge — the runtime injected by `<script src=".../app-bridge.js" data-api-key=...>` — already monkey-patches `window.fetch` for embedded apps. It auto-attaches `Authorization: Bearer <id_token>` on same-origin requests and auto-retries on `401 + X-Shopify-Retry-Invalid-Session-Request: 1`. The "global fetch" behavior is explicit in Shopify's own App Bridge React changelog: `useAuthenticatedFetch` was removed because `app-bridge.js` injects authorization into global `fetch` (`refs/shopify-bridge/packages/app-bridge-react/CHANGELOG.md:177`).
 - TanStack server-fn RPC routes through bare `fetch` (≡ `globalThis.fetch` at call time) to a same-origin URL (`/_serverFn/<id>` by default). App Bridge intercepts that fetch the same way it would intercept a hand-rolled `fetch('/api/...')` — there is nothing TanStack-specific blocking it.
 - Concrete redundancy in this port: the `client` half of `src/lib/ShopifyServerFnMiddleware.ts:38-41` (`getSessionToken` + `Authorization` header) duplicates what App Bridge already does. The server half — `authenticateAdmin` returning a 401 with the retry header — is where the value lives, and that pairs cleanly with App Bridge's auto-retry.
 - Plain TanStack route `server.handlers` (already used for webhooks at `src/routes/webhooks.app.uninstalled.ts:20-35`) can stand alongside server fns for "thin JSON API" endpoints. Client calls them with regular `fetch('/app/api/...')`, App Bridge attaches the token, the server runs the same `Shopify.authenticateAdmin` flow. No client middleware needed.
@@ -36,6 +36,17 @@ So the contract is: every browser → backend hop carries a fresh JWT in `Author
 
 > "Your app's frontend must acquire a session token from App Bridge. In the current version of App Bridge, this is handled automatically using `authenticatedFetch`. You must include the token in the `AUTHORIZATION` header for all requests to the app's backend."
 
+`refs/shopify-bridge/packages/app-bridge-react/CHANGELOG.md:177`:
+
+> "Removed `useAuthenticatedFetch` hook as the `app-bridge.js` script injects automatic authorization into the global `fetch` function"
+
+`refs/shopify-bridge/packages/app-bridge-react/README.md:57-65`:
+
+> "Include the `app-bridge.js` script tag in your app..." and
+> "The `app-bridge.js` script is CDN-hosted, so your app always gets the latest version of it."
+
+Reading: yes, this is intentionally invasive at the runtime boundary: App Bridge patches the browser's global `fetch` rather than exposing a helper you must call.
+
 The patch is opt-out, not opt-in. From the App Bridge config type (`node_modules/.pnpm/@shopify+app-bridge-types@0.7.0/.../shopify.ts:99-121`):
 
 ```ts
@@ -57,6 +68,8 @@ interface AppBridgeConfig {
 ```
 
 Reading: `fetch` interception is a default feature; `disabledFeatures: ['fetch']` opts out; `appOrigins` extends the allowlist beyond the app's own origin. The default-on, same-origin scope is exactly what this port needs.
+
+Important nuance about "all fetches": the patch is global, but "attach auth token" is still policy-gated (default same-origin + optional `appOrigins`; and fetch patching can be disabled via `disabledFeatures`). So behavior is broad by mechanism, constrained by allowlist/config.
 
 ### Auto-retry on `401 + X-Shopify-Retry-Invalid-Session-Request: 1`
 
@@ -85,7 +98,11 @@ export function respondToInvalidSessionToken({params, request, retryRequest = fa
 }
 ```
 
-That 401-with-retry-header is the contract App Bridge listens for — not something this port invents. The unit test at `refs/shopify-app-js/.../strategies/__tests__/token-exchange/authenticate.test.ts:187-210` confirms an XHR with a bad token returns 401 + `X-Shopify-Retry-Invalid-Session-Request: 1`.
+That 401-with-retry-header is the contract App Bridge listens for — not something this port invents. It is visible in both server libs:
+
+- `refs/shopify-app-js/packages/apps/shopify-app-remix/src/server/authenticate/const.ts:7-9` defines `X-Shopify-Retry-Invalid-Session-Request: 1`.
+- `refs/shopify-app-js/packages/apps/shopify-app-remix/src/server/authenticate/helpers/respond-to-invalid-session-token.ts:23-27` throws `401` with that header for XHR/fetch requests.
+- `refs/shopify-app-js/packages/apps/shopify-app-remix/src/server/authenticate/admin/strategies/__tests__/token-exchange/authenticate.test.ts:206-209` asserts `401` + header `= "1"`.
 
 ### Side benefit: the bounce page
 
@@ -332,7 +349,7 @@ In rough priority order. Each is independent.
 
 1. **Fix the silent 401 swallow.** `src/lib/ShopifyServerFnMiddleware.ts:51-56` and `src/routes/app.tsx:81-90` both convert non-redirect Responses to `Error`. That breaks App Bridge's auto-retry path because the 401 + retry header never reaches the wire. Change to `throw auth` so TanStack's server-fn handler returns the Response intact (verified by `server-functions-handler.ts:174-180` and `:321-324`). This is the single highest-impact fix in this audit — the rest of the bridge plumbing is already correct.
 
-2. **Remove the client-side session-token middleware.** Drop the `.client(...)` arm of `shopifyServerFnMiddleware`. Document in a comment that App Bridge auto-attaches `Authorization` and auto-retries on the retry header. Rationale + citations live in this doc; in-code comment can be one line.
+2. **Remove the client-side session-token middleware.** Drop the `.client(...)` arm of `shopifyServerFnMiddleware`. Keep rationale + citations in this doc and in tests instead of adding non-essential code comments.
 
 3. **Add one plain API route as a worked example.** Pick a real call site (e.g., move the `generateProduct` mutation to `src/routes/app/api.products.create.ts` and call via `fetch`). Validate end-to-end:
     - Headed Playwright: trigger generate, observe `Authorization: Bearer …` on the request in DevTools.
@@ -352,3 +369,4 @@ In rough priority order. Each is independent.
 - App Bridge's auto-retry: how many times? On the first 401 the retry happens; on a second 401 with retry header, does it bail or loop? The Shopify docs and SDK don't answer this directly. Behavioral test (item 3 above) should observe the headed network log; if a stale-token scenario can be forced twice in a row, watch what App Bridge does.
 - App Bridge's same-origin scope: the `appOrigins` config is documented but the *exact* default-allowed set isn't. Empirically: same-origin works (the template depends on it). If we ever route server fns through a non-same-origin URL (e.g., a Worker on a different domain), we'd need to set `appOrigins` on the `<script>` config — and `src/components/AppProvider.tsx:24` would need to switch from `data-api-key` to a `<script>` body that calls `createApp({apiKey, appOrigins})`. Not a current need.
 - Whether `disabledFeatures: ['fetch']` is ever desirable here. If an external library wants to call a non-Shopify backend from the iframe and we don't want App Bridge wrapping its fetches, that's the lever. No current consumer of that.
+- Runtime visibility gap: `app-bridge.js` is CDN-hosted (`refs/shopify-bridge/packages/app-bridge-react/README.md:59-65`), and `@shopify/app-bridge-types` types are downloaded from CDN (`refs/shopify-bridge/packages/app-bridge-types/README.md:21-25`). So we can verify contracts and integration points from refs, but not the exact internal matching algorithm of the fetch patch without network/runtime instrumentation.
