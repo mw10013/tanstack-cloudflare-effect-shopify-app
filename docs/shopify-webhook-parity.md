@@ -35,7 +35,7 @@ Verified against:
 | Duplicate detection header exposed | `eventId` and `webhookId` | `eventId` only (optional on `webhooks` transport) | ⚠️ partial |
 | `app/uninstalled` handler | delete sessions if `session` exists | unconditional `deleteSessionsByShop(shop)` | ⚠️ intentional refinement |
 | `app/scopes_update` handler | update `scope` when `session` exists | same behavior + payload/schema validation | ✅ (stricter input validation) |
-| API version alignment | Admin API + webhook config aligned (`October25` / `2025-10`) | split (`January26` in code, `2026-07` in TOML) | ❌ drift |
+| API version alignment | Admin API + webhook config aligned (`October25` / `2025-10`) | aligned to `January26` / `2026-01` across `Shopify.ts`, `.graphqlrc.ts`, and both TOMLs | ✅ |
 
 ## 1) Subscription declaration and registration
 
@@ -182,19 +182,20 @@ Template updates scope only when `session` exists. Port does the same and adds r
 
 Parity: yes, with stricter decode guarantees.
 
-## 6) API version drift (template vs port, and within port)
+## 6) API version alignment
 
-Template is aligned:
+Template is aligned at `October25` / `2025-10`:
 
 - `refs/shopify-app-template/app/shopify.server.ts:13` -> `ApiVersion.October25`
 - `refs/shopify-app-template/shopify.app.toml:9` -> `api_version = "2025-10"`
 
-Port is split:
+Port is now aligned at `January26` / `2026-01`:
 
 - `src/lib/Shopify.ts:70` -> `ShopifyApi.ApiVersion.January26`
-- `shopify.app.toml:13` / `shopify.app.staging.toml:12` -> `api_version = "2026-07"`
+- `.graphqlrc.ts:6,11` -> `ApiVersion.January26` (schema URL + codegen preset)
+- `shopify.app.toml:13` / `shopify.app.staging.toml:12` -> `api_version = "2026-01"`
 
-That is an internal drift in our app surface, not only a "we are ahead of template" drift.
+Policy: pin the Admin API and webhook config to the same enum-backed version (`January26`) so `pnpm graphql-codegen` and webhook delivery agree on schema. We are ahead of the template by one quarterly release; bump both the enum and the two TOMLs together when advancing.
 
 ## 7) Shopify delivery expectations check
 
@@ -216,10 +217,8 @@ Both template and port return `new Response()` on success for these two routes, 
 
 2. **Add debug logs on auth failure paths** in `Shopify.authenticateWebhook` (non-POST, invalid HMAC, missing headers/other invalid).
 
-3. **Decide API version policy and align config**:
-   - either align `src/lib/Shopify.ts` and `shopify.app*.toml` to one version
-   - or keep split intentionally and document why
+3. ~~**Decide API version policy and align config**~~ — done: aligned `src/lib/Shopify.ts`, `.graphqlrc.ts`, and both TOMLs to `January26` / `2026-01`. See §6.
 
 4. **Optional surface parity nicety**: set `statusText` for 405/401/400 to match template responses exactly.
 
-Items 1-2 are direct parity work. Item 3 is architectural policy. Item 4 is low-risk polish.
+Items 1-2 are direct parity work. Item 4 is low-risk polish.
