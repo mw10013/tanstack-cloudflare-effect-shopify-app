@@ -10,20 +10,14 @@ test("generate product from iframe button renders product JSON", async ({
   const frame = page.frameLocator('iframe[src*="embedded=1"]');
   await expect(frame.locator("s-page")).toBeVisible();
 
-  const outsideButton = page.getByRole("button", {
-    name: "Generate a product",
-  });
-  // The title-bar button outside the iframe appears only after app hydration.
-  // Use it as the readiness signal before clicking the iframe button.
-  await expect(outsideButton).toBeVisible();
-
   const productSection = frame.locator(
     's-section[heading="Get started with products"]',
   );
-  const insideButton = productSection.getByRole("button", {
+  // Scope to the product section to target the section button, not the title-bar button.
+  const productSectionGenerateButton = productSection.getByRole("button", {
     name: "Generate a product",
   });
-  await insideButton.click();
+  await productSectionGenerateButton.click();
 
   const mutationSection = frame.locator(
     's-section[heading="productCreate mutation"]',
