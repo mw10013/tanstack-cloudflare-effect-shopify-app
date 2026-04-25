@@ -128,22 +128,6 @@ const renderExitIframePage = (
     { headers: buildDocumentResponseHeaders(shop) },
   );
 
-const buildAdminContext = (
-  shopify: ReturnType<typeof makeShopifyApi>,
-  session: ShopifyApi.Session,
-): ShopifyAdminContext => ({
-  session,
-  graphql: Effect.fn("Shopify.graphql")(function* (query, options) {
-    const client = new shopify.clients.Graphql({ session });
-    const apiResponse = yield* tryShopifyPromise(() =>
-      client.request(query, {
-        variables: options?.variables,
-      }),
-    );
-    return apiResponse;
-  }),
-});
-
 export class Shopify extends Context.Service<Shopify>()("Shopify", {
   make: Effect.gen(function* () {
     const repository = yield* Repository;
@@ -192,6 +176,47 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         Effect.flatMap(repository.upsertSession),
       );
     });
+    /**
+     * Builds a per-request admin context around a stored offline session.
+     *
+     * On 401 from Shopify, clears `session.accessToken` and re-stores the row.
+     * This does not rescue the current request — the 401 still propagates as
+     * `ShopifyError` — but it forces the next `authenticateAdmin` browser
+     * request to see `isActive() === false` and fall through to token exchange
+     * instead of re-using the dead token. Mirrors the template's
+     * `handleClientError` → `invalidateAccessToken` path.
+     *
+     * Store failures during invalidation are swallowed so the original 401
+     * always propagates — matches the template's "invalidate best-effort,
+     * always throw the upstream error" behavior.
+     */
+    const buildAdminContext = (session: ShopifyApi.Session): ShopifyAdminContext => ({
+      session,
+      graphql: Effect.fn("Shopify.graphql")(function* (query, options) {
+        const client = new shopify.clients.Graphql({ session });
+        const result = yield* Effect.tryPromise({
+          try: () => client.request(query, { variables: options?.variables }),
+          catch: (cause) => cause,
+        }).pipe(
+          Effect.tapError((cause) =>
+            cause instanceof ShopifyApi.HttpResponseError && cause.response.code === 401
+              ? Effect.gen(function* () {
+                  session.accessToken = undefined;
+                  yield* Effect.ignore(storeSession(session));
+                })
+              : Effect.void,
+          ),
+          Effect.mapError(
+            (cause) =>
+              new ShopifyError({
+                message: cause instanceof Error ? cause.message : String(cause),
+                cause,
+              }),
+          ),
+        );
+        return result;
+      }),
+    });
     const loadSession = Effect.fn("Shopify.loadSession")(function* (id: Domain.Session["id"]) {
       const storedSession = yield* repository.findSessionById(id);
       if (Option.isNone(storedSession)) return Option.none();
@@ -235,6 +260,34 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       },
     );
     /**
+     * Returns an admin context for a shop without an incoming browser session
+     * token. For background jobs, cron triggers, durable workflows, and queue
+     * consumers — anything that operates on behalf of a shop without a user
+     * request.
+     *
+     * Fails with `ShopifyError` when no offline session exists for the shop.
+     * When an offline session exists but its access token is expiring,
+     * `ensureValidOfflineSession` refreshes it in place first.
+     *
+     * Mirrors the template's `unauthenticated.admin(shop)` contract.
+     */
+    const unauthenticatedAdmin = Effect.fn("Shopify.unauthenticatedAdmin")(
+      function* (shop: Domain.Shop) {
+        const session = yield* Effect.fromOption(
+          yield* ensureValidOfflineSession(shop),
+        ).pipe(
+          Effect.mapError(
+            () =>
+              new ShopifyError({
+                message: `No offline session for shop ${shop}`,
+                cause: undefined,
+              }),
+          ),
+        );
+        return buildAdminContext(session);
+      },
+    );
+    /**
      * Returns a Response with Shopify document headers applied when needed.
      *
      * Behavior:
@@ -271,25 +324,87 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       }),
     );
     /**
-     * Validates an incoming Shopify webhook request.
+     * Authenticates an incoming Shopify webhook request.
      *
-     * Deviates from `shopify.webhooks.validate({ rawBody, rawRequest })`: reads
-     * the body internally (stream can only be consumed once) and returns it
-     * alongside the validation result so callers that need the payload don't
-     * have to read the body themselves.
+     * Returns a Response for non-POST (405), invalid HMAC (401), or other
+     * validation failures (400). On success, returns `{ shop, topic, payload,
+     * session?, admin? }` — `session` and `admin` are present only when an
+     * offline row exists for the shop; `ensureValidOfflineSession` refreshes
+     * expiring tokens in place before returning.
+     *
+     * Mirrors the template's `authenticate.webhook(request)` contract.
      */
-    const validateWebhook = Effect.fn("Shopify.validateWebhook")(
+    const authenticateWebhook = Effect.fn("Shopify.authenticateWebhook")(
       function* (request: Request) {
+        if (request.method !== "POST") {
+          return new Response(undefined, { status: 405 });
+        }
         const rawBody = yield* tryShopifyPromise(() => request.text());
-        const result = yield* tryShopifyPromise(() =>
-          shopify.webhooks.validate({
-            rawBody,
-            rawRequest: request,
-          }),
+        const check = yield* tryShopifyPromise(() =>
+          shopify.webhooks.validate({ rawBody, rawRequest: request }),
         );
-        return { ...result, rawBody };
+        if (!check.valid) {
+          return new Response(undefined, {
+            status:
+              check.reason === ShopifyApi.WebhookValidationErrorReason.InvalidHmac
+                ? 401
+                : 400,
+          });
+        }
+        const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(check.domain);
+        const session = Option.getOrUndefined(yield* ensureValidOfflineSession(shop));
+        return {
+          shop,
+          topic: check.topic,
+          apiVersion: check.apiVersion,
+          webhookType: check.webhookType,
+          triggeredAt: check.triggeredAt,
+          eventId: check.eventId,
+          payload: JSON.parse(rawBody) as unknown,
+          session,
+          admin: session ? buildAdminContext(session) : undefined,
+        } as const;
       },
     );
+    /**
+     * Builds a recovery Response for an invalid or expired browser session token.
+     *
+     * For document requests (no `Authorization` header), returns a 302 to the
+     * bounce page (`/auth/session-token`) with a `shopify-reload` param that
+     * App Bridge uses to round-trip back to the original URL with a fresh
+     * `id_token`. For XHR requests, returns a 401 with the
+     * `X-Shopify-Retry-Invalid-Session-Request` header when `retryRequest` is
+     * true so App Bridge can retry the request with a fresh session token.
+     *
+     * Mirrors the template's `respondToInvalidSessionToken`
+     * ([refs/shopify-app-js/.../authenticate/helpers/respond-to-invalid-session-token.ts](file:///...)).
+     */
+    const respondToInvalidSessionToken = (
+      request: Request,
+      retryRequest: boolean,
+    ): Response => {
+      if (request.headers.get("authorization")) {
+        return new Response(undefined, {
+          status: 401,
+          headers: retryRequest
+            ? { "X-Shopify-Retry-Invalid-Session-Request": "1" }
+            : {},
+        });
+      }
+      const url = new URL(request.url);
+      const searchParams = url.searchParams;
+      searchParams.delete("id_token");
+      searchParams.set(
+        "shopify-reload",
+        `${config.appUrl}${url.pathname}?${searchParams.toString()}`,
+      );
+      return Response.redirect(
+        new URL(
+          `/auth/session-token?${searchParams.toString()}`,
+          request.url,
+        ).toString(),
+      );
+    };
     /**
      * Authenticates Shopify Admin requests for embedded app flows.
      *
@@ -367,11 +482,26 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
           return new Response("Unauthorized", { status: 401 });
         }
 
-        const payload = yield* tryShopifyPromise(() =>
-          shopify.session.decodeSessionToken(sessionToken),
+        const decoded = yield* Effect.tryPromise({
+          try: () => shopify.session.decodeSessionToken(sessionToken),
+          catch: (cause) => cause,
+        }).pipe(
+          Effect.catchIf(
+            (cause): cause is ShopifyApi.InvalidJwtError =>
+              cause instanceof ShopifyApi.InvalidJwtError,
+            () => Effect.succeed(respondToInvalidSessionToken(request, true)),
+          ),
+          Effect.mapError(
+            (cause) =>
+              new ShopifyError({
+                message: cause instanceof Error ? cause.message : String(cause),
+                cause,
+              }),
+          ),
         );
+        if (decoded instanceof Response) return decoded;
         const sessionShop = yield* Schema.decodeUnknownEffect(Domain.Shop)(
-          new URL(payload.dest).hostname,
+          new URL(decoded.dest).hostname,
         ).pipe(Effect.mapError((cause) => new ShopifyError({ message: "Invalid shop domain", cause })));
         const sessionId = yield* offlineSessionId(sessionShop);
         const existingSession = yield* loadSession(sessionId);
@@ -380,21 +510,41 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
           Option.isSome(existingSession) &&
           existingSession.value.isActive(undefined, WITHIN_MILLISECONDS_OF_EXPIRY)
         ) {
-          const ctx = buildAdminContext(shopify, existingSession.value);
+          const ctx = buildAdminContext(existingSession.value);
           yield* Ref.set(adminContextRef, Option.some(ctx));
           return ctx;
         }
 
-        const { session } = yield* tryShopifyPromise(() =>
-          shopify.auth.tokenExchange({
-            shop: sessionShop,
-            sessionToken,
-            requestedTokenType: ShopifyApi.RequestedTokenType.OfflineAccessToken,
-            expiring: true,
-          }),
+        const exchanged = yield* Effect.tryPromise({
+          try: () =>
+            shopify.auth.tokenExchange({
+              shop: sessionShop,
+              sessionToken,
+              requestedTokenType: ShopifyApi.RequestedTokenType.OfflineAccessToken,
+              expiring: true,
+            }),
+          catch: (cause) => cause,
+        }).pipe(
+          Effect.catchIf(
+            (cause): cause is ShopifyApi.InvalidJwtError | ShopifyApi.HttpResponseError =>
+              cause instanceof ShopifyApi.InvalidJwtError ||
+              (cause instanceof ShopifyApi.HttpResponseError &&
+                cause.response.code === 400 &&
+                (cause.response.body as { error?: string } | null | undefined)?.error ===
+                  "invalid_subject_token"),
+            () => Effect.succeed(respondToInvalidSessionToken(request, true)),
+          ),
+          Effect.mapError(
+            (cause) =>
+              new ShopifyError({
+                message: cause instanceof Error ? cause.message : String(cause),
+                cause,
+              }),
+          ),
         );
-        yield* storeSession(session);
-        const ctx = buildAdminContext(shopify, session);
+        if (exchanged instanceof Response) return exchanged;
+        yield* storeSession(exchanged.session);
+        const ctx = buildAdminContext(exchanged.session);
         yield* Ref.set(adminContextRef, Option.some(ctx));
         return ctx;
       },
@@ -460,13 +610,14 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       authenticateAdmin,
       login,
       withShopifyDocumentHeaders,
-      validateWebhook,
+      authenticateWebhook,
       storeSession,
       loadSession,
       deleteSessionsByShop,
       updateSessionScope,
       refreshOfflineToken,
       ensureValidOfflineSession,
+      unauthenticatedAdmin,
       offlineSessionId,
       graphqlDecode,
     };

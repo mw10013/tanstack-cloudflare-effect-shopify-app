@@ -17,20 +17,19 @@ export const Route = createFileRoute("/webhooks/app/scopes_update")({
           Effect.gen(function* () {
             const request = yield* CurrentRequest;
             const shopify = yield* Shopify;
-            const result = yield* shopify.validateWebhook(request);
-            if (!result.valid) {
-              return new Response("Invalid webhook", { status: 401 });
+            const result = yield* shopify.authenticateWebhook(request);
+            if (result instanceof Response) return result;
+            const payload = yield* Schema.decodeUnknownEffect(ScopesUpdatePayload)(
+              result.payload,
+            );
+            if (result.session) {
+              yield* shopify.updateSessionScope({
+                id: yield* Schema.decodeUnknownEffect(Domain.SessionId)(
+                  result.session.id,
+                ),
+                scope: payload.current.toString(),
+              });
             }
-            const payload = yield* Schema.decodeUnknownEffect(
-              ScopesUpdatePayload,
-            )(JSON.parse(result.rawBody));
-            const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(result.domain);
-            // Webhooks target the offline (shop-level) session; same session type authenticate.webhook() returns in the official library.
-            const id = yield* shopify.offlineSessionId(shop);
-            yield* shopify.updateSessionScope({
-              id,
-              scope: payload.current.toString(),
-            });
             return new Response();
           }),
         ),

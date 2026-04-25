@@ -1,4 +1,5 @@
 import type { useAppBridge } from "@shopify/app-bridge-react";
+import { redirect } from "@tanstack/react-router";
 import { createMiddleware } from "@tanstack/react-start";
 import { Effect } from "effect";
 
@@ -48,11 +49,11 @@ export const shopifyServerFnMiddleware = createMiddleware({ type: "function" })
     );
     if (auth instanceof Response) {
       const location = auth.headers.get("Location") ?? auth.headers.get("location");
-      throw new Error(
-        location
-          ? `Shopify admin auth redirect required: ${location}`
-          : `Shopify admin auth failed (${String(auth.status)})`,
-      );
+      if (location) {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw redirect({ href: location });
+      }
+      throw new Error(`Shopify admin auth failed (${String(auth.status)})`);
     }
     return next({ context: { admin: auth, session: auth.session } });
   });
