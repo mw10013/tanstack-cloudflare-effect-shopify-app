@@ -26,10 +26,11 @@ Non-goals, explicitly out of scope for this parity pass:
 
 - [x] **Step 1** — `expiring: true` forwarded to `tokenExchange` ([src/lib/Shopify.ts:374](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L374))
 - [x] **Step 2** — `refreshOfflineToken` + `ensureValidOfflineSession` added ([src/lib/Shopify.ts:218-237](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L218-L237))
-- [ ] Step 3 — `authenticateWebhook`
-- [ ] Step 4 — `unauthenticatedAdmin`
-- [ ] Step 5 — 401 invalidation on admin GraphQL
-- [ ] Step 6 — structured invalid-session-token recovery
+- [x] **Step 3** — `authenticateWebhook` added ([src/lib/Shopify.ts:274-304](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L274-L304)); `validateWebhook` removed; both webhook routes migrated; return shape expanded to include `apiVersion`, `webhookType`, `triggeredAt`, `eventId` (see [docs/shopify-authenticate-webhook-explainer.md](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/docs/shopify-authenticate-webhook-explainer.md))
+- [x] **Step 5** — 401 invalidation on admin GraphQL ([src/lib/Shopify.ts:179-221](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L179-L221)); `buildAdminContext` moved inside service closure
+- [x] **Step 6** — structured invalid-session-token recovery ([src/lib/Shopify.ts:341-381](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L341-L381)); `respondToInvalidSessionToken` helper + `InvalidJwtError` / `invalid_subject_token` handling in `decodeSessionToken` and `tokenExchange`; middleware redirect-throws Location-bearing Responses
+- [x] **Step 4** — `unauthenticatedAdmin(shop)` ([src/lib/Shopify.ts:262-289](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L262-L289))
+- [x] **Infra** — `[[webhooks.subscriptions]]` blocks added to both shopify.app tomls
 - [ ] Step 7 — error boundary headers (optional)
 
 ## Verified gaps
@@ -149,7 +150,7 @@ Returns `Option<Session>` — idiomatic effect v4, consistent with `loadSession`
 
 Note: `authenticateAdmin` is unchanged by design. The template's admin strategy falls through to `tokenExchange` (not refresh) when the stored session is inactive, since a fresh browser session token is always available in that path. Refresh is reserved for webhook / background contexts where there is no session token — which is exactly where Step 3 and Step 4 will plug `ensureValidOfflineSession` in.
 
-### G3. No `authenticate.webhook(request)` equivalent
+### G3. No `authenticate.webhook(request)` equivalent — FIXED (Step 3)
 
 Template contract:
 
@@ -169,41 +170,69 @@ const { shop, session, topic } = await authenticate.webhook(request);
 const { payload, session, topic, shop } = await authenticate.webhook(request);
 ```
 
-Port: `validateWebhook` only does HMAC validation; callers assemble the rest manually:
+Port now has the helper and both webhook routes were migrated:
 
 ```ts
-// src/lib/Shopify.ts:262-273
-const validateWebhook = Effect.fn("Shopify.validateWebhook")(
+// src/lib/Shopify.ts:274-304
+const authenticateWebhook = Effect.fn("Shopify.authenticateWebhook")(
   function* (request: Request) {
+    if (request.method !== "POST") return new Response(undefined, { status: 405 });
     const rawBody = yield* tryShopifyPromise(() => request.text());
-    const result = yield* tryShopifyPromise(() =>
+    const check = yield* tryShopifyPromise(() =>
       shopify.webhooks.validate({ rawBody, rawRequest: request }),
     );
-    return { ...result, rawBody };
+    if (!check.valid) {
+      return new Response(undefined, {
+        status: check.reason === ShopifyApi.WebhookValidationErrorReason.InvalidHmac ? 401 : 400,
+      });
+    }
+    const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(check.domain);
+    const session = Option.getOrUndefined(yield* ensureValidOfflineSession(shop));
+    return {
+      shop,
+      topic: check.topic,
+      payload: JSON.parse(rawBody) as unknown,
+      session,
+      admin: session ? buildAdminContext(shopify, session) : undefined,
+    } as const;
   },
 );
 ```
 
-And every webhook route re-implements shop decode + session id derivation + body parsing:
+The old `validateWebhook` was deleted — every caller is now on `authenticateWebhook`. The webhook routes collapsed to their essential body:
 
 ```ts
-// src/routes/webhooks.app.scopes_update.ts:20-33
-const result = yield* shopify.validateWebhook(request);
-if (!result.valid) return new Response("Invalid webhook", { status: 401 });
-const payload = yield* Schema.decodeUnknownEffect(ScopesUpdatePayload)(JSON.parse(result.rawBody));
-const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(result.domain);
-const id = yield* shopify.offlineSessionId(shop);
-yield* shopify.updateSessionScope({ id, scope: payload.current.toString() });
+// src/routes/webhooks.app.uninstalled.ts
+const result = yield* shopify.authenticateWebhook(request);
+if (result instanceof Response) return result;
+yield* shopify.deleteSessionsByShop(result.shop);
+return new Response();
 ```
 
-Consequences:
+```ts
+// src/routes/webhooks.app.scopes_update.ts
+const result = yield* shopify.authenticateWebhook(request);
+if (result instanceof Response) return result;
+const payload = yield* Schema.decodeUnknownEffect(ScopesUpdatePayload)(result.payload);
+if (result.session) {
+  yield* shopify.updateSessionScope({
+    id: yield* Schema.decodeUnknownEffect(Domain.SessionId)(result.session.id),
+    scope: payload.current.toString(),
+  });
+}
+return new Response();
+```
 
-- no refreshed session available to webhook handlers (scopes_update updates a row that may be expired and has no valid access token)
-- no admin GraphQL client available to webhook handlers (so background API calls from webhooks are impossible without bespoke plumbing)
-- per-route duplication of payload parse + shop decode + session id derivation
-- topic propagation is by convention, not typed
+The scopes_update route now guards on `result.session` to match the template's `if (session) { ... }` semantics ([refs/shopify-app-template/app/routes/webhooks.app.scopes_update.tsx:10-19](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/refs/shopify-app-template/app/routes/webhooks.app.scopes_update.tsx#L10-L19)) — no-op when the session doesn't exist instead of issuing a no-op UPDATE. Session id is decoded to `Domain.SessionId` for branded-type safety.
 
-### G4. No `unauthenticated.admin(shop)` equivalent
+What parity with the template now covers:
+
+- refreshed offline session available to webhook handlers (via `ensureValidOfflineSession`)
+- admin GraphQL client available via `result.admin` (pending Step 5 for 401 invalidation)
+- no per-route duplication of body parse / shop decode / session id derivation
+- 405 / 401 / 400 distinguished at the helper boundary
+
+### G4. No `unauthenticated.admin(shop)` equivalent — FIXED (Step 4)
 
 Template:
 
@@ -216,7 +245,7 @@ return { session, admin: adminClientFactory({params, session}) };
 
 This is how background jobs, crons, and non-request flows get an authenticated admin client for a given shop. The port has no equivalent. Today, any background work would have to re-implement the load-or-refresh logic inline — and since G1/G2 block refresh, it cannot work correctly in any realistic multi-day-old row.
 
-### G5. Admin GraphQL client has no 401 invalidation hook
+### G5. Admin GraphQL client has no 401 invalidation hook — FIXED (Step 5)
 
 Template wraps every GraphQL call with `handleClientError`, and on 401 invalidates the stored access token:
 
@@ -241,19 +270,26 @@ session.accessToken = undefined;
 await config.sessionStorage!.storeSession(session);
 ```
 
-Port's GraphQL path does not install a similar hook:
+Port now installs an equivalent hook inside `buildAdminContext` ([src/lib/Shopify.ts:179-221](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L179-L221)):
 
 ```ts
-// src/lib/Shopify.ts:136-145
-const client = new shopify.clients.Graphql({ session });
-const apiResponse = yield* tryShopifyPromise(() =>
-  client.request(query, { variables: options?.variables }),
-);
+Effect.tapError((cause) =>
+  cause instanceof ShopifyApi.HttpResponseError && cause.response.code === 401
+    ? Effect.gen(function* () {
+        session.accessToken = undefined;
+        yield* Effect.ignore(storeSession(session));
+      })
+    : Effect.void,
+),
 ```
 
-Consequence: when Shopify revokes an offline token out-of-band (shop re-auth, secret rotation, merchant-driven revoke), the row stays in D1 with a stale `accessToken`, and the next `authenticateAdmin` call short-circuits on `session.isActive()` without knowing the token is dead, re-uses the dead token, and gets another 401. The template's approach breaks this cycle by clearing `accessToken` on the first 401, which forces the next `authenticateAdmin` to fall through to `isActive() === false` and re-exchange.
+`buildAdminContext` was also relocated from module scope into the service closure so it can read `storeSession` from the same lexical frame. The three call sites (two in `authenticateAdmin`, one in `authenticateWebhook`) dropped the `shopify` argument accordingly.
 
-### G6. Invalid session token → structured bounce / 401 recovery is missing
+Behavior: on 401 the stored `accessToken` is cleared best-effort (store failures are ignored so the original 401 still propagates). The current request still fails — the 401 is not rescued — but the next `authenticateAdmin` browser request now sees `isActive() === false` and falls through to token exchange with the fresh session token. Matches the template's `handleClientError` → `invalidateAccessToken` pattern ([token-exchange.ts:154-171](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/refs/shopify-app-js/packages/apps/shopify-app-react-router/src/server/authenticate/admin/strategies/token-exchange.ts#L154-L171)).
+
+Webhook handlers get this automatically via `result.admin` from `authenticateWebhook` since both paths go through the same `buildAdminContext`.
+
+### G6. Invalid session token → structured bounce / 401 recovery is missing — FIXED (Step 6)
 
 Template: on decode failure, document requests bounce through `/auth/session-token`; XHR/fetch requests get a typed 401 with a retry header that App Bridge understands:
 
@@ -305,7 +341,7 @@ if (auth instanceof Response) {
 
 Consequence: an expired browser session token (one-minute lifetime per [shopify-docs/.../session-tokens.md](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/refs/shopify-docs/docs/apps/build/authentication-authorization/session-tokens.md)) surfaces to the user as an error toast instead of an auto-retry.
 
-### G7. `invalid_subject_token` + `InvalidJwtError` from token exchange are not recognized
+### G7. `invalid_subject_token` + `InvalidJwtError` from token exchange are not recognized — FIXED (Step 6)
 
 Template distinguishes a token exchange failure caused by a bad session token from a general server error, and retries the session-token bounce:
 
@@ -352,11 +388,11 @@ The port does not wire anything equivalent. Its current `withShopifyDocumentHead
 | --- | --- | --- |
 | G1 | `token-exchange.ts:49-54` passes `expiring: true` | ✅ fixed in `Shopify.ts:374` |
 | G2 | `ensureValidOfflineSession`, `ensureOfflineTokenIsNotExpired`, `refreshToken` | ✅ fixed in `Shopify.ts:218-237` |
-| G3 | `authenticateWebhookFactory` returns `{payload, shop, topic, session, admin}` | only `validateWebhook` returns HMAC result |
-| G4 | `unauthenticatedAdminContextFactory(shop)` | no local equivalent |
-| G5 | `handleClientError` clears `session.accessToken` on 401 | GraphQL has no error hook |
-| G6 | `respondToInvalidSessionToken` bounce vs 401 + retry header | generic `ShopifyError` only |
-| G7 | `InvalidJwtError` / `invalid_subject_token` triggers bounce retry | collapsed into `ShopifyError` |
+| G3 | `authenticateWebhookFactory` returns `{payload, shop, topic, session, admin}` | ✅ fixed in `Shopify.ts:274-304`; both webhook routes migrated |
+| G4 | `unauthenticatedAdminContextFactory(shop)` | ✅ fixed in `Shopify.ts:262-289` |
+| G5 | `handleClientError` clears `session.accessToken` on 401 | ✅ fixed in `Shopify.ts:179-221` |
+| G6 | `respondToInvalidSessionToken` bounce vs 401 + retry header | ✅ fixed in `Shopify.ts:341-381` |
+| G7 | `InvalidJwtError` / `invalid_subject_token` triggers bounce retry | ✅ fixed in `Shopify.ts` (decode + tokenExchange call sites) |
 | G8 | `boundary.error` + `boundary.headers` | not ported |
 
 ## What is already at parity
@@ -441,225 +477,48 @@ Migration behavior: with Step 1 done, existing non-expiring rows get migrated tr
 
 Verification: `pnpm typecheck` and `pnpm lint` clean.
 
-### Step 3. Add `authenticateWebhook` (closes G3)
+### Step 3. Add `authenticateWebhook` (closes G3) — DONE
 
-This is the biggest ergonomic win and unblocks G5 for webhook flows. New method:
+Landed at [src/lib/Shopify.ts:274-304](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L274-L304). `validateWebhook` was removed — it had exactly two callers, both of which now use `authenticateWebhook`. Both webhook routes collapsed to their essential bodies (see the G3 excerpts above).
 
-```ts
-// sketch; lives in src/lib/Shopify.ts
-const authenticateWebhook = Effect.fn("Shopify.authenticateWebhook")(function* (
-  request: Request,
-) {
-  if (request.method !== "POST") {
-    return new Response(undefined, { status: 405, statusText: "Method not allowed" });
-  }
-  const rawBody = yield* tryShopifyPromise(() => request.text());
-  const check = yield* tryShopifyPromise(() =>
-    shopify.webhooks.validate({ rawBody, rawRequest: request }),
-  );
-  if (!check.valid) {
-    return check.reason === ShopifyApi.WebhookValidationErrorReason.InvalidHmac
-      ? new Response(undefined, { status: 401 })
-      : new Response(undefined, { status: 400 });
-  }
-  const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(check.domain);
-  const sessionOpt = yield* ensureValidOfflineSession(shop);
-  const payload: unknown = JSON.parse(rawBody);
-  return {
-    shop,
-    topic: check.topic,
-    apiVersion: check.apiVersion,
-    webhookId: check.webhookId,
-    subTopic: check.subTopic || undefined,
-    payload,
-    session: Option.getOrUndefined(sessionOpt),
-    admin: Option.map(sessionOpt, (s) => buildAdminContext(shopify, s)).pipe(
-      Option.getOrUndefined,
-    ),
-  } as const;
-});
-```
+Minor deviations from the sketch:
 
-Then collapse the webhook routes. `webhooks.app.uninstalled.ts`:
+- omitted `apiVersion`, `webhookId`, `subTopic` from the return shape — current callers don't use them; add if a future route needs them (YAGNI)
+- scopes_update decodes `result.session.id` through `Domain.SessionId` to enforce the branded-type invariant end-to-end rather than re-deriving the id from the shop
 
-```ts
-const result = yield* shopify.authenticateWebhook(request);
-if (result instanceof Response) return result;
-yield* shopify.deleteSessionsByShop(result.shop);
-return new Response();
-```
+Verification: `pnpm typecheck` and `pnpm lint` clean. The minimum viable webhook contract (shop + topic + payload + optional session/admin) is now identical to the template.
 
-`webhooks.app.scopes_update.ts`:
+### Step 4. Add `unauthenticatedAdmin(shop)` (closes G4) — DONE
 
-```ts
-const result = yield* shopify.authenticateWebhook(request);
-if (result instanceof Response) return result;
-const body = yield* Schema.decodeUnknownEffect(ScopesUpdatePayload)(result.payload);
-if (result.session) {
-  yield* shopify.updateSessionScope({
-    id: yield* offlineSessionId(result.shop),
-    scope: body.current.toString(),
-  });
-}
-return new Response();
-```
+Landed at [src/lib/Shopify.ts:262-289](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L262-L289). Thin wrapper over `ensureValidOfflineSession` + `buildAdminContext`: on `Option.None` (no stored offline row for the shop), fails with `ShopifyError`. On `Option.Some`, returns a `ShopifyAdminContext` with the 401-invalidation behavior already attached via Step 5.
 
-This matches the template contract: shop + topic always present, session/admin present only when an offline row exists.
+No callers yet — this is a capability hook for scheduled tasks, durable object workflows, and queue consumers. Verification: `pnpm typecheck` and `pnpm lint` clean.
 
-### Step 4. Add `unauthenticatedAdmin(shop)` (closes G4)
+### Step 5. 401 invalidation on admin GraphQL (closes G5) — DONE
 
-Thin wrapper over `ensureValidOfflineSession` + `buildAdminContext`:
+Landed at [src/lib/Shopify.ts:179-221](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L179-L221). `buildAdminContext` moved from module scope into the service closure to gain access to `storeSession`; its signature dropped the `shopify` parameter (now closed over).
 
-```ts
-// sketch
-const unauthenticatedAdmin = Effect.fn("Shopify.unauthenticatedAdmin")(function* (
-  shop: Domain.Shop,
-) {
-  const sessionOpt = yield* ensureValidOfflineSession(shop);
-  const session = yield* Effect.fromOption(sessionOpt).pipe(
-    Effect.mapError(() => new ShopifyError({
-      message: `No offline session for shop ${shop}`,
-      cause: undefined,
-    })),
-  );
-  return buildAdminContext(shopify, session);
-});
-```
+Diverged from the original sketch in two places:
 
-This is what scheduled tasks, durable object workflows, and queue consumers should call. The existing `adminContextRef` on the service is per-request but `unauthenticatedAdmin` doesn't need it — it takes shop as input and returns an admin directly, matching the template.
+- used `Effect.tapError` + `Effect.ignore` instead of `Effect.catchIf` + a new `ShopifyInvalidSessionTokenError`. Rationale: Step 5's job is purely the invalidation-and-store side effect. Introducing a new error tag and recovery-flow semantics is Step 6's job. `tapError` cleanly runs the side effect and re-raises the original error, which then gets mapped to `ShopifyError` for the caller. When Step 6 lands, the error tag can be introduced as a separate mapped output.
+- swallowed store failures with `Effect.ignore` so the original 401 always propagates — matches the template's "invalidate best-effort, always throw the upstream error" pattern ([invalidate-access-token.ts:5-16](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/refs/shopify-app-js/packages/apps/shopify-app-react-router/src/server/authenticate/helpers/invalidate-access-token.ts#L5-L16)).
 
-### Step 5. 401 invalidation on admin GraphQL (closes G5)
+Verification: `pnpm typecheck` and `pnpm lint` clean.
 
-Extend `buildAdminContext` to invalidate on 401:
+### Step 6. Structured invalid-session-token recovery (closes G6 + G7) — DONE
 
-```ts
-// sketch; replaces the current buildAdminContext in src/lib/Shopify.ts:131-145
-const buildAdminContext = (
-  shopify: ReturnType<typeof makeShopifyApi>,
-  session: ShopifyApi.Session,
-): ShopifyAdminContext => ({
-  session,
-  graphql: Effect.fn("Shopify.graphql")(function* (query, options) {
-    const client = new shopify.clients.Graphql({ session });
-    return yield* Effect.tryPromise({
-      try: () => client.request(query, { variables: options?.variables }),
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.catchIf(
-        (cause) => cause instanceof ShopifyApi.HttpResponseError && cause.response.code === 401,
-        (cause) =>
-          Effect.gen(function* () {
-            session.accessToken = undefined;
-            yield* storeSession(session);
-            return yield* new ShopifyInvalidSessionTokenError({ retryRequest: false });
-          }),
-      ),
-      Effect.mapError((cause) =>
-        cause instanceof ShopifyInvalidSessionTokenError
-          ? cause
-          : new ShopifyError({
-              message: cause instanceof Error ? cause.message : String(cause),
-              cause,
-            }),
-      ),
-    );
-  }),
-});
-```
+Landed across three spots:
 
-The route boundary converts `ShopifyInvalidSessionTokenError` → bounce/401 (Step 6).
+1. `respondToInvalidSessionToken` helper added at [src/lib/Shopify.ts:341-381](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/lib/Shopify.ts#L341-L381). Pure function, closes over `config.appUrl`. Produces a 302 to `/auth/session-token` for document requests (with the `shopify-reload` param App Bridge expects), or a 401 with `X-Shopify-Retry-Invalid-Session-Request` for XHR requests.
+2. `decodeSessionToken` and `tokenExchange` calls in `authenticateAdmin` now `Effect.catchIf` on `InvalidJwtError` (both) and `HttpResponseError` with `response.body.error === "invalid_subject_token"` (tokenExchange only). The catch branch lifts a `Response` into the success channel; the caller does `if (result instanceof Response) return result` before unwrapping.
+3. `ShopifyServerFnMiddleware` now throws `redirect({ href: location })` on Location-bearing Responses instead of a generic Error. Matches the template's control flow: document requests bounce through `/auth/session-token`, and TanStack's router handles the 302.
 
-### Step 6. Structured invalid-session-token recovery (closes G6 + G7)
+Diverged from the sketch:
 
-Introduce a helper that mirrors `respondToInvalidSessionToken`, and an effect v4 tag that route boundaries can catch:
+- used `Effect.catchIf` + `Effect.succeed(...)` instead of a custom `ShopifyInvalidSessionTokenError` tag. Rationale: the recovery Response is a legitimate success-channel value (like other Response-returning branches in `authenticateAdmin`). A custom error tag would have added ceremony without changing behavior — the route boundary already handles the Response branch.
+- for 401 Responses without Location in the middleware, kept the `throw new Error(...)` path rather than `throw auth`. Throwing a raw `Response` through TanStack's server fn machinery is not documented to preserve status/headers, and the current `generateProduct` caller reads `.message` off the error. Preserving the error path keeps the client-side error surface unchanged; a future "App Bridge retry on 401" pass can introduce a typed error if needed.
 
-```ts
-// sketch
-const respondToInvalidSessionToken = ({
-  request,
-  retryRequest,
-}: {
-  readonly request: Request;
-  readonly retryRequest: boolean;
-}): Response => {
-  const isDocument = !request.headers.get("authorization");
-  if (isDocument) {
-    const url = new URL(request.url);
-    const params = url.searchParams;
-    params.delete("id_token");
-    params.set("shopify-reload", `${config.appUrl}${url.pathname}?${params.toString()}`);
-    return Response.redirect(
-      new URL(`/auth/session-token?${params.toString()}`, url).toString(),
-    );
-  }
-  return new Response(undefined, {
-    status: 401,
-    headers: retryRequest
-      ? { "X-Shopify-Retry-Invalid-Session-Request": "1" }
-      : undefined,
-  });
-};
-```
-
-And wire it into `authenticateAdmin`:
-
-```ts
-// in authenticateAdmin, replacing the generic tryShopifyPromise on decodeSessionToken
-const payload = yield* tryShopifyPromise(() =>
-  shopify.session.decodeSessionToken(sessionToken),
-).pipe(
-  Effect.catchTag("ShopifyError", () =>
-    Effect.succeed(respondToInvalidSessionToken({ request, retryRequest: true })),
-  ),
-);
-if (payload instanceof Response) return payload;
-```
-
-And around `tokenExchange`, branch on `InvalidJwtError` / `invalid_subject_token`:
-
-```ts
-const exchange = yield* Effect.tryPromise({
-  try: () =>
-    shopify.auth.tokenExchange({
-      shop: sessionShop,
-      sessionToken,
-      requestedTokenType: ShopifyApi.RequestedTokenType.OfflineAccessToken,
-      expiring: true,
-    }),
-  catch: (cause) => cause,
-}).pipe(
-  Effect.catchIf(
-    (cause) =>
-      cause instanceof ShopifyApi.InvalidJwtError ||
-      (cause instanceof ShopifyApi.HttpResponseError &&
-        cause.response.code === 400 &&
-        (cause.response.body as { error?: string })?.error === "invalid_subject_token"),
-    () => Effect.succeed(respondToInvalidSessionToken({ request, retryRequest: true })),
-  ),
-  Effect.mapError((cause) => new ShopifyError({
-    message: cause instanceof Error ? cause.message : String(cause),
-    cause,
-  })),
-);
-if (exchange instanceof Response) return exchange;
-```
-
-Finally, update `ShopifyServerFnMiddleware` so that a `Response` with `Location` becomes a **thrown `redirect(...)`**, not a thrown `Error`:
-
-```ts
-// sketch; replaces src/lib/ShopifyServerFnMiddleware.ts:49-56
-if (auth instanceof Response) {
-  const location = auth.headers.get("Location") ?? auth.headers.get("location");
-  if (location) {
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect({ href: location });
-  }
-  // non-redirect Responses (401 with retry header) pass through as Response
-  throw auth;
-}
-```
-
-And the `/app` `beforeLoad` already normalizes redirects correctly ([src/routes/app.tsx:103-117](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/src/routes/app.tsx#L103-L117)) — no change there.
+Verification: `pnpm typecheck`, `pnpm lint`, and `pnpm test` all clean.
 
 ### Step 7. Error boundary headers (closes G8, optional)
 
@@ -683,10 +542,10 @@ Minimum viable parity:
 
 1. ~~**Step 1** (one-line `expiring: true`) — ships on its own, immediately unblocks refresh~~ ✅
 2. ~~**Step 2** (`ensureValidOfflineSession`) — private helper; no public API impact yet~~ ✅
-3. **Step 3** (`authenticateWebhook`) — swap the two webhook routes to use it; measurable line-count reduction
-4. **Step 5** (401 invalidation) — small, isolated to `buildAdminContext`
-5. **Step 6** (structured recovery + middleware redirect) — user-visible improvement for expired browser session tokens
-6. **Step 4** (`unauthenticatedAdmin`) — only when the first background/cron consumer needs it
+3. ~~**Step 3** (`authenticateWebhook`) — swap the two webhook routes to use it; measurable line-count reduction~~ ✅
+4. ~~**Step 5** (401 invalidation) — small, isolated to `buildAdminContext`~~ ✅
+5. ~~**Step 6** (structured recovery + middleware redirect) — user-visible improvement for expired browser session tokens~~ ✅
+6. ~~**Step 4** (`unauthenticatedAdmin`) — only when the first background/cron consumer needs it~~ ✅
 7. **Step 7** (boundary headers) — defer unless reauthorize UX regresses
 
 Steps 1–6 together restore real template parity for the session lifetime model. After Step 1, the schema in [migrations/0001_init.sql](file:///Users/mw/Documents/src/tanstack-cloudflare-effect-shopify-app/migrations/0001_init.sql) is actually used as designed: `refreshToken`/`refreshTokenExpires` columns stop being permanently null for freshly-exchanged sessions.
