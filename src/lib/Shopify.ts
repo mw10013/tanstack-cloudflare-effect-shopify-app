@@ -337,19 +337,20 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     const authenticateWebhook = Effect.fn("Shopify.authenticateWebhook")(
       function* (request: Request) {
         if (request.method !== "POST") {
-          return new Response(undefined, { status: 405 });
+          return new Response(undefined, {
+            status: 405,
+            statusText: "Method not allowed",
+          });
         }
         const rawBody = yield* tryShopifyPromise(() => request.text());
         const check = yield* tryShopifyPromise(() =>
           shopify.webhooks.validate({ rawBody, rawRequest: request }),
         );
         if (!check.valid) {
-          return new Response(undefined, {
-            status:
-              check.reason === ShopifyApi.WebhookValidationErrorReason.InvalidHmac
-                ? 401
-                : 400,
-          });
+          return check.reason ===
+            ShopifyApi.WebhookValidationErrorReason.InvalidHmac
+            ? new Response(undefined, { status: 401, statusText: "Unauthorized" })
+            : new Response(undefined, { status: 400, statusText: "Bad Request" });
         }
         const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(check.domain);
         const session = Option.getOrUndefined(yield* ensureValidOfflineSession(shop));

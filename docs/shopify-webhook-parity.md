@@ -28,7 +28,7 @@ Verified against:
 | Runtime registration (`registerWebhooks` / `afterAuth`) | Exported but not used in template app | Not implemented | ✅ (same effective behavior) |
 | HMAC validation library | `@shopify/shopify-api` `webhooks.validate` | Same library and call | ✅ |
 | Non-POST / invalid signature response codes | 405 / 401 / 400 | 405 / 401 / 400 | ✅ wire behavior |
-| Failure response surface | throws `Response` + `statusText` | returns `Response`, no `statusText` | ⚠️ surface |
+| Failure response surface | throws `Response` + `statusText` | returns `Response` with matching `statusText` (`Method not allowed` / `Unauthorized` / `Bad Request`) | ✅ (returns vs. throws is intentional) |
 | Failure-path logs | `logger.debug(...)` in auth helper | no debug logging in auth helper | ❌ operational parity |
 | Offline session load + refresh | `ensureValidOfflineSession(...)` | same concept in Effect (`ensureValidOfflineSession`) | ✅ |
 | Success context shape | includes `webhookId`, `subTopic`/`name`, and events fields (`handle`/`action`/`resourceId`) | missing those fields | ❌ contract gap |
@@ -86,18 +86,20 @@ if (!check.valid) {
 const session = await ensureValidOfflineSession(params, check.domain);
 ```
 
-Port (`src/lib/Shopify.ts:339-356`):
+Port (`src/lib/Shopify.ts:339-358`):
 
 ```ts
-if (request.method !== "POST") return new Response(undefined, { status: 405 });
+if (request.method !== "POST") {
+  return new Response(undefined, { status: 405, statusText: "Method not allowed" });
+}
 const rawBody = yield* tryShopifyPromise(() => request.text());
 const check = yield* tryShopifyPromise(() =>
   shopify.webhooks.validate({ rawBody, rawRequest: request }),
 );
 if (!check.valid) {
-  return new Response(undefined, {
-    status: check.reason === ShopifyApi.WebhookValidationErrorReason.InvalidHmac ? 401 : 400,
-  });
+  return check.reason === ShopifyApi.WebhookValidationErrorReason.InvalidHmac
+    ? new Response(undefined, { status: 401, statusText: "Unauthorized" })
+    : new Response(undefined, { status: 400, statusText: "Bad Request" });
 }
 const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(check.domain);
 const session = Option.getOrUndefined(yield* ensureValidOfflineSession(shop));
@@ -107,10 +109,10 @@ Crypto/auth security parity: yes.
 
 ### 2.2 Surface/operational differences
 
-- Template throws `Response` and sets `statusText` (`Method not allowed`, `Unauthorized`, `Bad Request`); ours returns `Response` and omits `statusText`.
+- Template throws `Response`; ours returns `Response`. Intentional — TanStack Start route handlers return `Response` rather than throwing it. `statusText` now matches the template (`Method not allowed`, `Unauthorized`, `Bad Request`).
 - Template logs failure paths (`logger.debug(...)` at non-POST and validation failures); ours currently does not log those paths.
 
-Behavior on the wire is equivalent for status code, but debuggability is not.
+Behavior on the wire is equivalent for status code and reason phrase, but debuggability is not.
 
 ## 3) Returned webhook context parity (main gap)
 
@@ -219,6 +221,6 @@ Both template and port return `new Response()` on success for these two routes, 
 
 3. ~~**Decide API version policy and align config**~~ — done: aligned `src/lib/Shopify.ts`, `.graphqlrc.ts`, and both TOMLs to `January26` / `2026-01`. See §6.
 
-4. **Optional surface parity nicety**: set `statusText` for 405/401/400 to match template responses exactly.
+4. ~~**Optional surface parity nicety**: set `statusText` for 405/401/400 to match template responses exactly.~~ — done: `Shopify.ts:339-352` now sets `Method not allowed` / `Unauthorized` / `Bad Request`. Returns vs. throws kept intentionally (TanStack Start route handlers).
 
-Items 1-2 are direct parity work. Item 4 is low-risk polish.
+Items 1-2 are the remaining direct parity work.
