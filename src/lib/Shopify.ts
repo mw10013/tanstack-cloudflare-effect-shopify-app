@@ -337,6 +337,14 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     const authenticateWebhook = Effect.fn("Shopify.authenticateWebhook")(
       function* (request: Request) {
         if (request.method !== "POST") {
+          yield* Effect.logDebug(
+            "Received a non-POST request for a webhook. Only POST requests are allowed.",
+          ).pipe(
+            Effect.annotateLogs({
+              url: request.url,
+              method: request.method,
+            }),
+          );
           return new Response(undefined, {
             status: 405,
             statusText: "Method not allowed",
@@ -347,10 +355,25 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
           shopify.webhooks.validate({ rawBody, rawRequest: request }),
         );
         if (!check.valid) {
-          return check.reason ===
+          if (
+            check.reason ===
             ShopifyApi.WebhookValidationErrorReason.InvalidHmac
-            ? new Response(undefined, { status: 401, statusText: "Unauthorized" })
-            : new Response(undefined, { status: 400, statusText: "Bad Request" });
+          ) {
+            yield* Effect.logDebug("Webhook HMAC validation failed").pipe(
+              Effect.annotateLogs({ ...check }),
+            );
+            return new Response(undefined, {
+              status: 401,
+              statusText: "Unauthorized",
+            });
+          }
+          yield* Effect.logDebug("Webhook validation failed").pipe(
+            Effect.annotateLogs({ ...check }),
+          );
+          return new Response(undefined, {
+            status: 400,
+            statusText: "Bad Request",
+          });
         }
         const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(check.domain);
         const session = Option.getOrUndefined(yield* ensureValidOfflineSession(shop));

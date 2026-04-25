@@ -29,7 +29,7 @@ Verified against:
 | HMAC validation library | `@shopify/shopify-api` `webhooks.validate` | Same library and call | ✅ |
 | Non-POST / invalid signature response codes | 405 / 401 / 400 | 405 / 401 / 400 | ✅ wire behavior |
 | Failure response surface | throws `Response` + `statusText` | returns `Response` with matching `statusText` (`Method not allowed` / `Unauthorized` / `Bad Request`) | ✅ (returns vs. throws is intentional) |
-| Failure-path logs | `logger.debug(...)` in auth helper | no debug logging in auth helper | ❌ operational parity |
+| Failure-path logs | `logger.debug(...)` in auth helper | `Effect.logDebug(...).pipe(Effect.annotateLogs(...))` on all three failure paths | ✅ |
 | Offline session load + refresh | `ensureValidOfflineSession(...)` | same concept in Effect (`ensureValidOfflineSession`) | ✅ |
 | Success context shape | flat shape with all transport fields optional + session-presence union | spreads validate result → discriminated union on `webhookType` (tighter than upstream); session presence still implicit via `session: Session \| undefined` | ✅ (stricter) |
 | Duplicate detection header exposed | `eventId` and `webhookId` | both (`eventId` typed required on `events`, optional on `webhooks` per upstream union) | ✅ |
@@ -110,9 +110,12 @@ Crypto/auth security parity: yes.
 ### 2.2 Surface/operational differences
 
 - Template throws `Response`; ours returns `Response`. Intentional — TanStack Start route handlers return `Response` rather than throwing it. `statusText` now matches the template (`Method not allowed`, `Unauthorized`, `Bad Request`).
-- Template logs failure paths (`logger.debug(...)` at non-POST and validation failures); ours currently does not log those paths.
+- Failure-path debug logging now matches the template at all three points (`Shopify.ts:339-377`):
+  - non-POST → `Effect.logDebug("Received a non-POST request...")` annotated with `{ url, method }`
+  - invalid HMAC → `Effect.logDebug("Webhook HMAC validation failed")` annotated with the full `check` object
+  - other invalid → `Effect.logDebug("Webhook validation failed")` annotated with the full `check` object
 
-Behavior on the wire is equivalent for status code and reason phrase, but debuggability is not.
+Behavior on the wire is equivalent for status code, reason phrase, and operational debuggability.
 
 ## 3) Returned webhook context parity
 
@@ -230,10 +233,10 @@ Both template and port return `new Response()` on success for these two routes, 
 
 1. ~~**Restore full webhook context shape** in `Shopify.authenticateWebhook`~~ — done: spread the validate result so `webhookId`, `subTopic`, `name`, `handle`, `action`, `resourceId` flow through, with the upstream discriminated union on `webhookType` preserved at the caller boundary. See §3.
 
-2. **Add debug logs on auth failure paths** in `Shopify.authenticateWebhook` (non-POST, invalid HMAC, missing headers/other invalid).
+2. ~~**Add debug logs on auth failure paths**~~ — done: `Shopify.ts:339-377` emits `Effect.logDebug` with `Effect.annotateLogs(...)` on non-POST, invalid HMAC, and other-invalid paths. See §2.2.
 
 3. ~~**Decide API version policy and align config**~~ — done: aligned `src/lib/Shopify.ts`, `.graphqlrc.ts`, and both TOMLs to `January26` / `2026-01`. See §6.
 
 4. ~~**Optional surface parity nicety**: set `statusText` for 405/401/400 to match template responses exactly.~~ — done: `Shopify.ts:339-352` now sets `Method not allowed` / `Unauthorized` / `Bad Request`. Returns vs. throws kept intentionally (TanStack Start route handlers).
 
-Only item 2 (debug logs on auth failure paths) remains.
+All four backlog items closed.
