@@ -68,7 +68,7 @@ interface CookieRow {
 const sameSiteMap: Record<string, string> = { "-1": "Lax", "0": "None", "1": "Lax", "2": "Strict" };
 const chromeEpochOffset = 11_644_473_600n;
 
-const cookies = (stmt.all() as CookieRow[]).map(
+const cookies = (stmt.all() as unknown as CookieRow[]).map(
   ({ name, value, encrypted_value, host_key, path: p, is_secure, is_httponly, samesite, expires_utc, has_expires }) => ({
     name,
     value: encrypted_value.length > 0 ? decrypt(encrypted_value) : value,
