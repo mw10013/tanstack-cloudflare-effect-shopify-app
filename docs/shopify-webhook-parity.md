@@ -31,8 +31,8 @@ Verified against:
 | Failure response surface | throws `Response` + `statusText` | returns `Response` with matching `statusText` (`Method not allowed` / `Unauthorized` / `Bad Request`) | ✅ (returns vs. throws is intentional) |
 | Failure-path logs | `logger.debug(...)` in auth helper | no debug logging in auth helper | ❌ operational parity |
 | Offline session load + refresh | `ensureValidOfflineSession(...)` | same concept in Effect (`ensureValidOfflineSession`) | ✅ |
-| Success context shape | includes `webhookId`, `subTopic`/`name`, and events fields (`handle`/`action`/`resourceId`) | missing those fields | ❌ contract gap |
-| Duplicate detection header exposed | `eventId` and `webhookId` | `eventId` only (optional on `webhooks` transport) | ⚠️ partial |
+| Success context shape | flat shape with all transport fields optional + session-presence union | spreads validate result → discriminated union on `webhookType` (tighter than upstream); session presence still implicit via `session: Session \| undefined` | ✅ (stricter) |
+| Duplicate detection header exposed | `eventId` and `webhookId` | both (`eventId` typed required on `events`, optional on `webhooks` per upstream union) | ✅ |
 | `app/uninstalled` handler | delete sessions if `session` exists | unconditional `deleteSessionsByShop(shop)` | ⚠️ intentional refinement |
 | `app/scopes_update` handler | update `scope` when `session` exists | same behavior + payload/schema validation | ✅ (stricter input validation) |
 | API version alignment | Admin API + webhook config aligned (`October25` / `2025-10`) | aligned to `January26` / `2026-01` across `Shopify.ts`, `.graphqlrc.ts`, and both TOMLs | ✅ |
@@ -114,22 +114,38 @@ Crypto/auth security parity: yes.
 
 Behavior on the wire is equivalent for status code and reason phrase, but debuggability is not.
 
-## 3) Returned webhook context parity (main gap)
+## 3) Returned webhook context parity
 
-Template context includes more fields than our port returns.
+### Upstream shape (two layers)
 
-Template (`refs/shopify-app-js/.../authenticate/webhooks/authenticate.ts:56-87` and `.../types.ts:12-170`) includes:
+`shopify-api` (`refs/shopify-app-js/packages/apps/shopify-api/lib/webhooks/types.ts:185-202`) — real discriminated union on `webhookType`:
 
-- always: `apiVersion`, `shop`, `topic`, `webhookId`, `payload`, `webhookType`, `triggeredAt`, `eventId`
-- webhooks transport: `subTopic`, `name`
-- events transport: `handle`, `action`, `resourceId`
+```ts
+interface WebhooksWebhookFields { webhookType: 'webhooks'; webhookId; subTopic?; name?; eventId?; ... }
+interface EventsWebhookFields   { webhookType: 'events';   webhookId; eventId; handle?; action?; resourceId?; ... }
+type WebhookFields = WebhooksWebhookFields | EventsWebhookFields;
+```
 
-Port (`src/lib/Shopify.ts:356-366`) currently returns:
+`shopify-app-react-router` (`.../webhooks/types.ts:12-170`) — flattens it: one `Context` interface with `subTopic`, `name`, `handle`, `action`, `resourceId` all optional. The union it exposes is on session presence (`WebhookContextWithSession` vs `WebhookContextWithoutSession`).
 
-- `shop`, `topic`, `apiVersion`, `webhookType`, `triggeredAt`, `eventId`, `payload`, `session`, `admin`
-- missing: `webhookId`, `subTopic`, `name`, `handle`, `action`, `resourceId`
+### Port shape (now)
 
-This is not a security hole, but it is a real contract parity gap.
+`src/lib/Shopify.ts:354-364` spreads the validate result, dropping `valid`, `hmac`, `domain` and replacing `domain` with the typed `shop`:
+
+```ts
+const { valid: _valid, hmac: _hmac, domain: _domain, ...rest } = check;
+return {
+  ...rest,                                              // webhookType, topic, apiVersion, webhookId, triggeredAt, eventId, + transport-specific
+  shop,
+  payload: JSON.parse(rawBody) as unknown,
+  session,                                              // Session | undefined
+  admin: session ? buildAdminContext(session) : undefined,
+} as const;
+```
+
+This preserves the `shopify-api` discriminated union at the caller boundary — strictly tighter than the react-router wrapper, which flattens it. Existing routes (`webhooks.app.uninstalled.ts`, `webhooks.app.scopes_update.ts`) only read `shop`, `payload`, `session`, so no narrowing required. Future consumers of `subTopic`/`name`/`handle`/`action`/`resourceId` get proper narrowing via `if (result.webhookType === "events")`.
+
+Session presence remains implicit via `session: Session | undefined` rather than a second union, matching the existing port contract.
 
 Upstream tests assert these fields for events (`refs/shopify-app-js/.../authenticate.test.ts:191-200`):
 
@@ -142,6 +158,8 @@ expect(result.action).toBe('update');
 expect(result.resourceId).toBe('gid://shopify/Product/123');
 ```
 
+All present in our return shape.
+
 ## 4) Duplicate webhook semantics (important correction)
 
 Shopify's duplicate-handling guide recommends dedupe by `X-Shopify-Event-Id`, not by `X-Shopify-Webhook-Id`:
@@ -151,8 +169,7 @@ Shopify's duplicate-handling guide recommends dedupe by `X-Shopify-Event-Id`, no
 
 Implication for our current port:
 
-- We already expose `eventId`, so duplicate detection is possible today when `eventId` is present. Note: per `refs/shopify-app-js/packages/apps/shopify-api/lib/webhooks/types.ts:187-196`, `eventId` is required on the `events` transport but optional (`eventId?: string`) on the classic `webhooks` transport — dedupe code must handle `undefined`.
-- Missing `webhookId` is still a template API parity gap and reduces context fidelity.
+- Both `eventId` and `webhookId` are exposed (spread from the validate result). Per `refs/shopify-app-js/packages/apps/shopify-api/lib/webhooks/types.ts:187-196`, `eventId` is required on the `events` transport but optional (`eventId?: string`) on the classic `webhooks` transport — dedupe code must handle `undefined` on the webhooks branch. The discriminated return type narrows this correctly when callers check `webhookType`.
 
 ## 5) Route handler parity
 
@@ -211,11 +228,7 @@ Both template and port return `new Response()` on success for these two routes, 
 
 ## 8) Final parity backlog (prioritized)
 
-1. **Restore full webhook context shape** in `Shopify.authenticateWebhook`:
-   - add `webhookId`
-   - add webhooks fields `subTopic`, `name`
-   - add events fields `handle`, `action`, `resourceId`
-   - ideally return a discriminated union by `webhookType` like upstream so `eventId` is typed required on `events` and optional on `webhooks`
+1. ~~**Restore full webhook context shape** in `Shopify.authenticateWebhook`~~ — done: spread the validate result so `webhookId`, `subTopic`, `name`, `handle`, `action`, `resourceId` flow through, with the upstream discriminated union on `webhookType` preserved at the caller boundary. See §3.
 
 2. **Add debug logs on auth failure paths** in `Shopify.authenticateWebhook` (non-POST, invalid HMAC, missing headers/other invalid).
 
@@ -223,4 +236,4 @@ Both template and port return `new Response()` on success for these two routes, 
 
 4. ~~**Optional surface parity nicety**: set `statusText` for 405/401/400 to match template responses exactly.~~ — done: `Shopify.ts:339-352` now sets `Method not allowed` / `Unauthorized` / `Bad Request`. Returns vs. throws kept intentionally (TanStack Start route handlers).
 
-Items 1-2 are the remaining direct parity work.
+Only item 2 (debug logs on auth failure paths) remains.

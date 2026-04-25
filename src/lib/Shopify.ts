@@ -354,13 +354,10 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         }
         const shop = yield* Schema.decodeUnknownEffect(Domain.Shop)(check.domain);
         const session = Option.getOrUndefined(yield* ensureValidOfflineSession(shop));
+        const { valid: _valid, hmac: _hmac, domain: _domain, ...rest } = check;
         return {
+          ...rest,
           shop,
-          topic: check.topic,
-          apiVersion: check.apiVersion,
-          webhookType: check.webhookType,
-          triggeredAt: check.triggeredAt,
-          eventId: check.eventId,
           payload: JSON.parse(rawBody) as unknown,
           session,
           admin: session ? buildAdminContext(session) : undefined,
