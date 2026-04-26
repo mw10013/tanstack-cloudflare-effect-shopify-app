@@ -9,7 +9,12 @@ Question: this port aims to mirror `refs/shopify-app-template` on TanStack Start
 - Concrete redundancy in this port: the `client` half of `src/lib/ShopifyServerFnMiddleware.ts:38-41` (`getSessionToken` + `Authorization` header) duplicates what App Bridge already does. The server half — `authenticateAdmin` returning a 401 with the retry header — is where the value lives, and that pairs cleanly with App Bridge's auto-retry.
 - Plain TanStack route `server.handlers` (already used for webhooks at `src/routes/webhooks.app.uninstalled.ts:20-35`) can stand alongside server fns for "thin JSON API" endpoints. Client calls them with regular `fetch('/app/api/...')`, App Bridge attaches the token, the server runs the same `Shopify.authenticateAdmin` flow. No client middleware needed.
 - The bulk of `src/lib/Shopify.ts` (`authenticateAdmin`, bounce/exit-iframe pages, `respondToInvalidSessionToken`, `authenticateWebhook`, `unauthenticatedAdmin`) is *not* redundant with App Bridge — it ports server-side strategy from `@shopify/shopify-app-react-router/server`, which is React-Router-coupled and can't be lifted as-is. The shrinkage opportunities here are small: align edge cases with `respondToInvalidSessionToken` semantics and consider replacing the local `AppProvider` with the React-component re-exports `@shopify/app-bridge-react` already gives us.
-- Recommended changes, in priority order: (1) remove client-side session-token middleware on the server-fn path; (2) add one plain API route to validate the App-Bridge-auto-fetch path end-to-end; (3) adopt `<NavMenu>` from `@shopify/app-bridge-react` to drop one local JSX augmentation; (4) leave server-side `Shopify.ts` largely as-is — it's the part App Bridge cannot replace.
+- Recommended changes, in priority order: (1) fix the silent 401-response swallow so retry headers reach the wire; (2) remove client-side session-token middleware on the server-fn path; (3) add one plain API route to validate the App-Bridge-auto-fetch path end-to-end; (4) adopt `<NavMenu>` from `@shopify/app-bridge-react` to drop one local JSX augmentation; (5) leave server-side `Shopify.ts` largely as-is — it's the part App Bridge cannot replace.
+
+## Decision Update (2026-04-25)
+
+- Yes: removing the server-fn client middleware that manually adds `Authorization` is a valid change now.
+- Do it immediately after the 401-propagation fix, because retry depends on preserving the raw `401 + X-Shopify-Retry-Invalid-Session-Request: 1` Response.
 
 ## Background: How An Embedded App Authenticates Browser → Backend
 

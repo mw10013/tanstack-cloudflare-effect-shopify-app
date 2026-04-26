@@ -49,10 +49,14 @@ const makeAppLayer = (env: Env, request: Request) => {
  * `causeSquash` unboxed and fail the client-side `instanceof Error` check,
  * producing an opaque "unexpected error" message.
  *
- * TanStack `redirect`/`notFound` objects placed in the defect channel via
- * `Effect.die` are detected and re-thrown as-is so TanStack's control flow
- * (HTTP 307 redirects, 404 not-found handling) works from within Effect
- * pipelines.
+ * Raw `Response` values, TanStack `redirect`, and TanStack `notFound` objects
+ * are thrown as-is after `Cause.squash` so TanStack Start can route them
+ * correctly: a raw `Response` gets `X_TSS_RAW_RESPONSE` set by
+ * `server-functions-handler` and returned to the client unchanged; redirect
+ * and notFound objects go through TanStack's serialization/control-flow paths.
+ * `Cause.squash` priority (first `Fail` → first `Die`) aligns with HTTP
+ * control flow because there is exactly one HTTP-relevant value in the Cause
+ * for these cases.
  *
  * **Error message preservation:** TanStack Router's `ShallowErrorPlugin`
  * (seroval plugin used during SSR dehydration) serializes ONLY `.message`
@@ -79,7 +83,7 @@ const makeRunEffect = (env: Env, request: Request) => {
     if (Exit.isSuccess(exit)) return exit.value;
     const squashed = Cause.squash(exit.cause);
     // oxlint-disable-next-line @typescript-eslint/only-throw-error -- redirect is a Response, notFound is a plain object; TanStack expects these thrown as-is
-    if (isRedirect(squashed) || isNotFound(squashed)) throw squashed;
+    if (squashed instanceof Response || isRedirect(squashed) || isNotFound(squashed)) throw squashed;
     if (squashed instanceof Error) {
       if (Cause.isUnknownError(squashed) && squashed.cause instanceof Error) {
         squashed.message = squashed.cause.message;

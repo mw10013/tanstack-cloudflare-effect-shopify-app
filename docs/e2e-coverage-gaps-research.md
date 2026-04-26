@@ -5,10 +5,10 @@
 The old version of this note is stale. The repo now has four real specs plus a setup project:
 
 - `e2e/embedded-app-home.spec.ts:4-8` loads `SHOPIFY_PREVIEW_URL`, scopes into `iframe[src*="embedded=1"]`, and waits for `s-page`.
-- `e2e/nav-additional-page.spec.ts:4-21` opens the embedded app, then clicks the mirrored Shopify admin chrome link for `Additional page` and asserts the iframe renders `s-page[heading="Additional page"]`.
-- `e2e/generate-product.spec.ts:5-31` clicks the in-app `Generate a product` button, waits for the mutation output block, and checks that `Edit product` appears.
-- `e2e/edit-product.spec.ts:5-42` generates a product, clicks `Edit product` in the iframe, parses the generated product title from the mutation JSON, and asserts the Shopify host surface switches to the product editor by matching both the top-level document title and the host heading.
-- `playwright.config.ts:28-44` runs those specs only inside the `e2e` project, which depends on the `setup` project and always reuses `playwright/.auth/shopify-admin.json`.
+- `e2e/nav-additional-page.spec.ts:4-22` opens the embedded app, then clicks the mirrored Shopify admin chrome link for `Additional page` and asserts the iframe renders `s-page[heading="Additional page"]`.
+- `e2e/generate-product.spec.ts:5-32` clicks the in-app `Generate a product` button (scoped to the `Get started with products` section to avoid the title-bar primary-action button), waits for the `productCreate mutation` section, and checks that `Edit product` appears.
+- `e2e/edit-product.spec.ts:5-43` generates a product, clicks `Edit product` in the iframe, parses the generated product title from the mutation JSON, and asserts the Shopify host surface switches to the product editor by matching both the top-level document title and the host heading.
+- `playwright.config.ts:28-45` runs those specs only inside the `e2e` project, which depends on the `setup` project and always reuses the storage-state file at `storageStatePath` (`playwright/.auth/shopify-admin.json`).
 
 That means current coverage is no longer “one smoke test”, but it is still almost entirely authenticated happy-path coverage.
 
@@ -16,14 +16,14 @@ That means current coverage is no longer “one smoke test”, but it is still a
 
 - Embedded boot works: Shopify admin preview URL loads, iframe mounts, Polaris/App Bridge boot enough for the app shell to render.
 - Secondary route rendering works when navigation is initiated from Shopify admin chrome.
-- The product-generation happy path works end-to-end: button click → server fn → `shopifyServerFnMiddleware` → `authenticateAdmin` → `ProductRepository` GraphQL mutations → React state render in `src/routes/app.index.tsx:46-58` and `src/routes/app.index.tsx:119-135`.
-- The main App Bridge handoff works for `Edit product`: the iframe click in `src/routes/app.index.tsx:61-68` opens Shopify's product editor in the host admin surface for the exact product just created, not merely some generic editor shell.
+- The product-generation happy path works end-to-end: button click → server fn → `shopifyServerFnMiddleware` → `authenticateAdmin` → `ProductRepository` GraphQL mutations → React state render in `src/routes/app.index.tsx:46-59` and `src/routes/app.index.tsx:119-135`.
+- The main App Bridge handoff works for `Edit product`: the iframe click in `src/routes/app.index.tsx:61-69` opens Shopify's product editor in the host admin surface for the exact product just created, not merely some generic editor shell.
 
 ## Harness constraints that matter
 
 ### 1. Current Playwright config is biased toward authenticated tests
 
-`playwright.config.ts:36-43` gives the `e2e` project a fixed `storageState`, and `e2e/shopify-admin.setup.ts:7-27` bootstraps that state manually. Any anonymous or expired-session coverage needs either:
+`playwright.config.ts:36-44` gives the `e2e` project a fixed `storageState`, and `e2e/shopify-admin.setup.ts:7-28` bootstraps that state manually (pauses the runner via `page.pause()` for human login when the storage file is missing). Any anonymous or expired-session coverage needs either:
 
 - a second Playwright project without `storageState`, or
 - an explicit fresh browser context inside a spec.
@@ -53,10 +53,10 @@ This is the biggest blind spot.
 
 Relevant code paths:
 
-- `src/routes/index.tsx:3-8` redirects `/?shop=...` to `/app...`.
-- `src/routes/auth.login.ts:44-79` serves the login form on `GET` and handles shop-domain validation on `POST`.
-- `src/routes/app.tsx:95-117` enforces auth in `beforeLoad`.
-- `src/lib/Shopify.ts:446-503` contains the real redirect branches: missing `shop`/`host`, missing `embedded=1`, missing `id_token`, and unauthorized fallback.
+- `src/routes/index.tsx:3-11` redirects `/?shop=...` to `/app...` and otherwise renders a plain HTML login form that POSTs to `/auth/login`.
+- `src/routes/auth.login.ts:44-81` serves the Polaris-based login form on `GET` and handles shop-domain validation on `POST` via `shopify.login(request)`.
+- `src/routes/app.tsx:101-115` enforces auth in `beforeLoad` by calling `authenticateAppRoute` and throwing `redirect({ href })` on the redirect branch.
+- `src/lib/Shopify.ts:446-504` contains the real redirect branches: missing `shop`/`host` (→ `/auth/login`), missing `embedded=1` (→ embedded URL), missing `id_token` (→ `/auth/session-token` bounce), and the unauthorized 401 fallback.
 
 Today none of that is exercised by Playwright because every spec starts from an authenticated preview URL with stored cookies.
 
@@ -74,7 +74,7 @@ These are strong candidates because they are local, deterministic, and cover the
 
 The existing nav spec proves that Shopify admin chrome can switch the iframe to `/app/additional`, but it does not prove the app’s own navigation glue:
 
-- `src/routes/app.tsx:123-129` builds nav hrefs with `searchStr` preservation.
+- `src/routes/app.tsx:122-127` builds `s-app-nav`/`s-link` hrefs with `searchStr` preservation.
 - `src/components/AppProvider.tsx:10-22` listens for `shopify:navigate` and forwards to TanStack `navigate({ to: href })`.
 
 If either of those broke, the current spec could still pass because it clicks the mirrored outer-shell link, not the app-side navigation event path.
@@ -93,13 +93,13 @@ Best version of this test:
 
 The home route has explicit error UI:
 
-- `src/routes/app.index.tsx:46-58` catches the server-fn failure and stores `error`.
-- `src/routes/app.index.tsx:114-117` renders `s-section[heading="Request failed"]`.
+- `src/routes/app.index.tsx:46-59` catches the server-fn failure and stores `error`.
+- `src/routes/app.index.tsx:114-118` renders `s-section[heading="Request failed"]`.
 
 There is also auth/error behavior below the button click that is not covered:
 
-- `src/lib/ShopifyServerFnMiddleware.ts:37-59` injects the App Bridge session token and re-runs `authenticateAdmin` on the server.
-- `src/lib/Shopify.ts:403-428` returns retry/redirect responses for invalid session tokens.
+- `src/lib/ShopifyServerFnMiddleware.ts:27-52` runs `shopify.authenticateAdmin(request)` on the server side of every embedded server-fn call. The `Authorization: Bearer <session_token>` header itself is attached client-side by App Bridge's patched `fetch`; the middleware verifies that token and short-circuits with a redirect/Response when auth fails.
+- `src/lib/Shopify.ts:403-428` returns retry/redirect responses for invalid session tokens (401 + `X-Shopify-Retry-Invalid-Session-Request: 1` for XHR, `/auth/session-token` redirect for documents).
 
 This is lower priority than the auth entry coverage because it is harder to force deterministically, but it is the main remaining user-visible failure state on the app home page.
 
@@ -113,7 +113,7 @@ That is a poor fit for Playwright. Better test level: route/integration tests wi
 
 ### Full OAuth install flow
 
-`e2e/shopify-admin.setup.ts:18-27` already documents the reality here: login bootstrap is manual when storage state is missing. Automating the full Shopify auth flow in Playwright fights Shopify bot detection and is not a good regression target for this repo.
+`e2e/shopify-admin.setup.ts:18-28` already documents the reality here: login bootstrap is manual (CI throws, local pauses with `page.pause()`) when storage state is missing. Automating the full Shopify auth flow in Playwright fights Shopify bot detection and is not a good regression target for this repo.
 
 ## Recommended next work
 

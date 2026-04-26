@@ -57,8 +57,8 @@ const authenticateAppRoute = createServerFn({ method: "GET" })
       readonly pathname: string;
     }) => input,
   )
-  .handler(async ({ data, context: { runEffect } }) => {
-    const result = await runEffect(
+  .handler(({ data, context: { runEffect } }) =>
+    runEffect(
       Effect.gen(function* () {
         const shopify = yield* Shopify;
         const request = yield* CurrentRequest;
@@ -69,27 +69,20 @@ const authenticateAppRoute = createServerFn({ method: "GET" })
             headers: request.headers,
           },
         );
-        const authResult = yield* shopify.authenticateAdmin(appRequest);
-        return authResult instanceof Response
-          ? authResult
-          : {
-              apiKey: Redacted.value(shopify.config.apiKey),
-              shop: authResult.session.shop,
-            } as const;
+        const auth = yield* shopify.authenticateAdmin(appRequest);
+
+        if (auth instanceof Response) {
+          const location = auth.headers.get("Location") ?? auth.headers.get("location");
+          if (location) return yield* Effect.fail(redirect({ href: location }));
+          return yield* Effect.fail(auth);
+        }
+
+        return {
+          apiKey: Redacted.value(shopify.config.apiKey),
+          shop: auth.session.shop,
+        } as const;
       }),
-    );
-    if (result instanceof Response) {
-      const location =
-        result.headers.get("Location") ?? result.headers.get("location");
-      if (location) {
-        return { redirect: location } as const;
-      }
-      throw new Error(
-        `Unexpected Shopify auth response: ${String(result.status)}`,
-      );
-    }
-    return result;
-  },
+    ),
 );
 
 export const Route = createFileRoute("/app")({
@@ -101,19 +94,12 @@ export const Route = createFileRoute("/app")({
    * `/app` subtree.
    */
   beforeLoad: async ({ location }) => {
-    const result = await authenticateAppRoute({
+    return authenticateAppRoute({
       data: {
         searchStr: location.searchStr,
         pathname: location.pathname,
       },
     });
-
-    if ("redirect" in result) {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect({ href: result.redirect });
-    }
-
-    return result;
   },
   component: AppLayout,
 });
