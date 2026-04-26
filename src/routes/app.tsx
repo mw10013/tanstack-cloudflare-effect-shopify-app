@@ -76,17 +76,17 @@ const authenticateAppRoute = createServerFn({ method: "GET" })
             headers: request.headers,
           },
         );
-        const auth = yield* shopify.authenticateAdmin(appRequest);
+        const session = yield* shopify.authenticateAdmin(appRequest);
 
-        if (auth instanceof Response) {
-          const location = auth.headers.get("Location") ?? auth.headers.get("location");
+        if (session instanceof Response) {
+          const location = session.headers.get("Location") ?? session.headers.get("location");
           if (location) return yield* Effect.fail(redirect({ href: location }));
-          return yield* Effect.fail(auth);
+          return yield* Effect.fail(session);
         }
 
         return {
           apiKey: Redacted.value(shopify.config.apiKey),
-          shop: auth.session.shop,
+          shop: session.shop,
         } as const;
       }),
     ),

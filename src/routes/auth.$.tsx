@@ -12,9 +12,9 @@ export const Route = createFileRoute("/auth/$")({
           Effect.gen(function* () {
             const request = yield* CurrentRequest;
             const shopify = yield* Shopify;
-            const result = yield* shopify.authenticateAdmin(request);
-            return result instanceof Response
-              ? result
+            const session = yield* shopify.authenticateAdmin(request);
+            return session instanceof Response
+              ? session
               : new Response(null, { status: 200 });
           }),
         ),

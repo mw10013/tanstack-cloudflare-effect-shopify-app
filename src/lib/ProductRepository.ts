@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect";
 
 import * as Domain from "@/lib/Domain";
-import { CurrentShopifyAdmin, ShopifyError } from "@/lib/Shopify";
+import { ShopifyAdmin } from "@/lib/Shopify";
 
 const ProductCreateResponse = Schema.Struct({
   productCreate: Schema.optional(
@@ -19,23 +19,11 @@ export class ProductRepository extends Context.Service<ProductRepository>()(
   "ProductRepository",
   {
     make: Effect.gen(function* () {
-      const admin = yield* CurrentShopifyAdmin;
-      const graphqlDecode = Effect.fn("ProductRepository.graphqlDecode")(function* <A>(
-        schema: Schema.Decoder<A>,
-        query: string,
-        options?: { readonly variables?: Record<string, unknown> },
-      ) {
-        const { data, errors } = yield* admin.graphql(query, options);
-        if (errors) yield* Effect.fail(new ShopifyError({ message: errors.message ?? "Admin GraphQL request failed", cause: errors }));
-        return yield* Effect.try({
-          try: () => Schema.decodeUnknownSync(schema)(data),
-          catch: (cause) => new ShopifyError({ message: "Admin GraphQL response validation failed", cause }),
-        });
-      });
+      const admin = yield* ShopifyAdmin;
 
       const createProduct = Effect.fn("ProductRepository.createProduct")(
         function* (title: Domain.Product["title"]) {
-          const result = yield* graphqlDecode(
+          const result = yield* admin.graphqlDecode(
             ProductCreateResponse,
             `#graphql
             mutation populateProduct($product: ProductCreateInput!) {
@@ -69,7 +57,7 @@ export class ProductRepository extends Context.Service<ProductRepository>()(
           productId: Domain.Product["id"],
           variants: readonly { readonly id: Domain.ProductVariant["id"]; readonly price: Domain.ProductVariant["price"] }[],
         ) {
-          const result = yield* graphqlDecode(
+          const result = yield* admin.graphqlDecode(
             ProductVariantsBulkUpdateResponse,
             `#graphql
             mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {

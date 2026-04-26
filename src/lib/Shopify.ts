@@ -19,20 +19,12 @@ export class ShopifyError extends Schema.TaggedErrorClass<ShopifyError>()(
   },
 ) {}
 
-export interface ShopifyAdminContext {
-  readonly session: ShopifyApi.Session;
-  readonly graphql: (
-    query: string,
-    options?: { readonly variables?: Record<string, unknown> },
-  ) => Effect.Effect<Awaited<ReturnType<InstanceType<typeof ShopifyApi.GraphqlClient>["request"]>>, ShopifyError>;
-}
-
-export type ShopifyAuthenticateAdminResult = ShopifyAdminContext | Response;
+export type ShopifyAuthenticateAdminResult = ShopifyApi.Session | Response;
 
 export type ShopifyLoginResult = { readonly shop?: string } | Response;
 
-export class CurrentShopifyAdmin extends Context.Service<CurrentShopifyAdmin, ShopifyAdminContext>()(
-  "CurrentShopifyAdmin",
+export class CurrentSession extends Context.Service<CurrentSession, ShopifyApi.Session>()(
+  "CurrentSession",
 ) {}
 
 const APP_BRIDGE_URL = "https://cdn.shopify.com/shopifycloud/app-bridge.js";
@@ -180,8 +172,6 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       );
     });
     /**
-     * Builds a per-request admin context around a stored offline session.
-     *
      * On 401 from Shopify, clears `session.accessToken` and re-stores the row.
      * This does not rescue the current request — the 401 still propagates as
      * `ShopifyError` — but it forces the next `authenticateAdmin` browser
@@ -193,32 +183,33 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
      * always propagates — matches the template's "invalidate best-effort,
      * always throw the upstream error" behavior.
      */
-    const buildAdminContext = (session: ShopifyApi.Session): ShopifyAdminContext => ({
-      session,
-      graphql: Effect.fn("Shopify.graphql")(function* (query, options) {
-        const client = new shopify.clients.Graphql({ session });
-        const result = yield* Effect.tryPromise({
-          try: () => client.request(query, { variables: options?.variables }),
-          catch: (cause) => cause,
-        }).pipe(
-          Effect.tapError((cause) =>
-            cause instanceof ShopifyApi.HttpResponseError && cause.response.code === 401
-              ? Effect.gen(function* () {
-                  session.accessToken = undefined;
-                  yield* Effect.ignore(storeSession(session));
-                })
-              : Effect.void,
-          ),
-          Effect.mapError(
-            (cause) =>
-              new ShopifyError({
-                message: cause instanceof Error ? cause.message : String(cause),
-                cause,
-              }),
-          ),
-        );
-        return result;
-      }),
+    const graphql = Effect.fn("Shopify.graphql")(function* (
+      session: ShopifyApi.Session,
+      query: string,
+      options?: { readonly variables?: Record<string, unknown> },
+    ) {
+      const client = new shopify.clients.Graphql({ session });
+      const result = yield* Effect.tryPromise({
+        try: () => client.request(query, { variables: options?.variables }),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.tapError((cause) =>
+          cause instanceof ShopifyApi.HttpResponseError && cause.response.code === 401
+            ? Effect.gen(function* () {
+                session.accessToken = undefined;
+                yield* Effect.ignore(storeSession(session));
+              })
+            : Effect.void,
+        ),
+        Effect.mapError(
+          (cause) =>
+            new ShopifyError({
+              message: cause instanceof Error ? cause.message : String(cause),
+              cause,
+            }),
+        ),
+      );
+      return result;
     });
     const loadSession = Effect.fn("Shopify.loadSession")(function* (id: Domain.Session["id"]) {
       const storedSession = yield* repository.findSessionById(id);
@@ -447,7 +438,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
      * - exchanges token and persists session when no active stored session exists
      *
      * Returns either:
-     * - `ShopifyAdminContext` on success
+     * - authenticated offline `Session` on success
      * - `Response` for redirect/bounce/unauthorized document control flow
      */
     const authenticateAdmin = Effect.fn("Shopify.authenticateAdmin")(
@@ -538,7 +529,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
           Option.isSome(existingSession) &&
           existingSession.value.isActive(undefined, WITHIN_MILLISECONDS_OF_EXPIRY)
         ) {
-          return buildAdminContext(existingSession.value);
+          return existingSession.value;
         }
 
         const exchanged = yield* Effect.tryPromise({
@@ -570,7 +561,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         );
         if (exchanged instanceof Response) return exchanged;
         yield* storeSession(exchanged.session);
-        return buildAdminContext(exchanged.session);
+        return exchanged.session;
       },
     );
     const login = Effect.fn("Shopify.login")(function* (request: Request) {
@@ -623,11 +614,38 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       loadSession,
       deleteSessionsByShop,
       updateSessionScope,
+      graphql,
       refreshOfflineToken,
       ensureValidOfflineSession,
       unauthenticatedAdmin,
       offlineSessionId,
     };
+  }),
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
+
+export class ShopifyAdmin extends Context.Service<ShopifyAdmin>()("ShopifyAdmin", {
+  make: Effect.gen(function* () {
+    const shopify = yield* Shopify;
+    const session = yield* CurrentSession;
+    const graphql = Effect.fn("ShopifyAdmin.graphql")(
+      (query: string, options?: { readonly variables?: Record<string, unknown> }) =>
+        shopify.graphql(session, query, options),
+    );
+    const graphqlDecode = Effect.fn("ShopifyAdmin.graphqlDecode")(function* <A>(
+      schema: Schema.Decoder<A>,
+      query: string,
+      options?: { readonly variables?: Record<string, unknown> },
+    ) {
+      const { data, errors } = yield* graphql(query, options);
+      if (errors) yield* Effect.fail(new ShopifyError({ message: errors.message ?? "Admin GraphQL request failed", cause: errors }));
+      return yield* Effect.try({
+        try: () => Schema.decodeUnknownSync(schema)(data),
+        catch: (cause) => new ShopifyError({ message: "Admin GraphQL response validation failed", cause }),
+      });
+    });
+    return { graphql, graphqlDecode };
   }),
 }) {
   static readonly layer = Layer.effect(this, this.make);

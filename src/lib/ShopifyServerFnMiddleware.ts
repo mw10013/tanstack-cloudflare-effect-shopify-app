@@ -4,7 +4,7 @@ import { Effect } from "effect";
 
 import { CurrentRequest } from "@/lib/CurrentRequest";
 import { ProductRepository } from "@/lib/ProductRepository";
-import { CurrentShopifyAdmin, Shopify } from "@/lib/Shopify";
+import { CurrentSession, Shopify, ShopifyAdmin } from "@/lib/Shopify";
 
 /**
  * Server-function auth middleware for Shopify embedded requests.
@@ -17,7 +17,7 @@ import { CurrentShopifyAdmin, Shopify } from "@/lib/Shopify";
  *
  * Server phase:
  * - verifies request/session with `shopify.authenticateAdmin(request)`
- * - injects `{ admin, session }` into middleware context for handlers
+ * - injects `{ session }` into middleware context for handlers
  *
  * Redirect nuance:
  * - `Shopify.authenticateAdmin` returns plain `Response.redirect(...)` values.
@@ -35,24 +35,25 @@ export const shopifyServerFnMiddleware = createMiddleware({ type: "function" })
       Effect.gen(function* () {
         const shopify = yield* Shopify;
         const request = yield* CurrentRequest;
-        const auth = yield* shopify.authenticateAdmin(request);
+        const session = yield* shopify.authenticateAdmin(request);
 
-        if (auth instanceof Response) {
-          const location = auth.headers.get("Location") ?? auth.headers.get("location");
+        if (session instanceof Response) {
+          const location = session.headers.get("Location") ?? session.headers.get("location");
           if (location) return yield* Effect.fail(redirect({ href: location }));
-          return yield* Effect.fail(auth);
+          return yield* Effect.fail(session);
         }
 
-        const runEffect = <A, E>(effect: Effect.Effect<A, E, ProductRepository | CurrentShopifyAdmin>) =>
+        const runEffect = <A, E>(effect: Effect.Effect<A, E, ProductRepository | ShopifyAdmin | CurrentSession>) =>
           context.runEffect(
             effect.pipe(
               Effect.provide(ProductRepository.layer),
-              Effect.provideService(CurrentShopifyAdmin, auth),
+              Effect.provide(ShopifyAdmin.layer),
+              Effect.provideService(CurrentSession, session),
             ),
           );
 
         return yield* Effect.tryPromise({
-          try: () => next({ context: { admin: auth, session: auth.session, runEffect } }),
+          try: () => next({ context: { session, runEffect } }),
           catch: (cause) => cause,
         });
       }),
