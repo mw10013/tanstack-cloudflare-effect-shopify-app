@@ -23,10 +23,6 @@ export type ShopifyAuthenticateAdminResult = ShopifyApi.Session | Response;
 
 export type ShopifyLoginResult = { readonly shop?: string } | Response;
 
-export class CurrentSession extends Context.Service<CurrentSession, ShopifyApi.Session>()(
-  "CurrentSession",
-) {}
-
 const APP_BRIDGE_URL = "https://cdn.shopify.com/shopifycloud/app-bridge.js";
 const POLARIS_URL = "https://cdn.shopify.com/shopifycloud/polaris.js";
 const CDN_URL = "https://cdn.shopify.com";
@@ -190,7 +186,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     ) {
       const client = new shopify.clients.Graphql({ session });
       const result = yield* Effect.tryPromise({
-        try: () => client.request(query, { variables: options?.variables }),
+        try: () => client.request<unknown>(query, { variables: options?.variables }),
         catch: (cause) => cause,
       }).pipe(
         Effect.tapError((cause) =>
@@ -620,32 +616,6 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       unauthenticatedAdmin,
       offlineSessionId,
     };
-  }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
-
-export class ShopifyAdmin extends Context.Service<ShopifyAdmin>()("ShopifyAdmin", {
-  make: Effect.gen(function* () {
-    const shopify = yield* Shopify;
-    const session = yield* CurrentSession;
-    const graphql = Effect.fn("ShopifyAdmin.graphql")(
-      (query: string, options?: { readonly variables?: Record<string, unknown> }) =>
-        shopify.graphql(session, query, options),
-    );
-    const graphqlDecode = Effect.fn("ShopifyAdmin.graphqlDecode")(function* <A>(
-      schema: Schema.Decoder<A>,
-      query: string,
-      options?: { readonly variables?: Record<string, unknown> },
-    ) {
-      const { data, errors } = yield* graphql(query, options);
-      if (errors) yield* Effect.fail(new ShopifyError({ message: errors.message ?? "Admin GraphQL request failed", cause: errors }));
-      return yield* Effect.try({
-        try: () => Schema.decodeUnknownSync(schema)(data),
-        catch: (cause) => new ShopifyError({ message: "Admin GraphQL response validation failed", cause }),
-      });
-    });
-    return { graphql, graphqlDecode };
   }),
 }) {
   static readonly layer = Layer.effect(this, this.make);

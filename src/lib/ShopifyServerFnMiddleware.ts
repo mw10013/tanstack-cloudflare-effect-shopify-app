@@ -3,8 +3,10 @@ import { createMiddleware } from "@tanstack/react-start";
 import { Effect } from "effect";
 
 import { CurrentRequest } from "@/lib/CurrentRequest";
+import { CurrentSession } from "@/lib/CurrentSession";
 import { ProductRepository } from "@/lib/ProductRepository";
-import { CurrentSession, Shopify, ShopifyAdmin } from "@/lib/Shopify";
+import { Shopify } from "@/lib/Shopify";
+import { ShopifyAdmin } from "@/lib/ShopifyAdmin";
 
 /**
  * Server-function auth middleware for Shopify embedded requests.

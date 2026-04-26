@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect";
 
 import * as Domain from "@/lib/Domain";
-import { ShopifyAdmin } from "@/lib/Shopify";
+import { ShopifyAdmin } from "@/lib/ShopifyAdmin";
 
 const ProductCreateResponse = Schema.Struct({
   productCreate: Schema.optional(
