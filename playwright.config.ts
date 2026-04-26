@@ -17,6 +17,8 @@ try {
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "./playwright/test-results",
+  // Embedded Shopify app cold starts can exceed Playwright's 5s default assertion timeout.
+  expect: { timeout: 10_000 },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
