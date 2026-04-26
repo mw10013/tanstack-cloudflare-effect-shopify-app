@@ -18,6 +18,13 @@ import { Shopify } from "@/lib/Shopify";
  * - verifies request/session with `shopify.authenticateAdmin(request)`
  * - injects `{ admin, session }` into middleware context for handlers
  *
+ * Redirect nuance:
+ * - `Shopify.authenticateAdmin` returns plain `Response.redirect(...)` values.
+ * - TanStack router redirect control flow only recognizes redirects created by
+ *   `redirect(...)` (redirect `Response` with router metadata).
+ * - So redirect Responses are mapped to `redirect({ href })`; non-redirect
+ *   Responses are failed through unchanged.
+ *
  * Non-redirect `Response` values are re-thrown unchanged so status/headers
  * (for example Shopify's 401 retry contract) reach TanStack Start transport.
  */

@@ -45,8 +45,15 @@ declare module "react" {
  * Route-boundary Shopify auth for `/app` document requests.
  *
  * Rebuilds an absolute app URL from router pathname/search, runs
- * `shopify.authenticateAdmin`, and normalizes redirect Responses into
- * `{ redirect }` for `beforeLoad` to throw via TanStack `redirect(...)`.
+ * `shopify.authenticateAdmin`, and preserves auth control flow via
+ * `runEffect` failures.
+ *
+ * Redirect nuance:
+ * - `Shopify.authenticateAdmin` returns plain `Response.redirect(...)` values.
+ * - TanStack router redirect control flow only recognizes redirects created by
+ *   `redirect(...)` (redirect `Response` with router metadata).
+ * - So redirect Responses are mapped to `redirect({ href })`; non-redirect
+ *   Responses are failed through unchanged.
  *
  * Successful auth returns route context with `apiKey` and authenticated `shop`.
  */
