@@ -269,16 +269,16 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       },
     );
     /**
-     * Returns an admin context for a shop without an incoming browser session
+     * Returns an offline session for a shop without an incoming browser session
      * token. For background jobs, cron triggers, durable workflows, and queue
-     * consumers — anything that operates on behalf of a shop without a user
-     * request.
+     * consumers, use the returned session to call Shopify APIs directly.
      *
      * Fails with `ShopifyError` when no offline session exists for the shop.
      * When an offline session exists but its access token is expiring,
      * `ensureValidOfflineSession` refreshes it in place first.
      *
-     * Mirrors the template's `unauthenticated.admin(shop)` contract.
+     * Deviates from the template's `unauthenticated.admin(shop)` contract by
+     * returning only the session instead of an admin context.
      */
     const unauthenticatedAdmin = Effect.fn("Shopify.unauthenticatedAdmin")(
       function* (shop: Domain.Shop) {
@@ -293,7 +293,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
               }),
           ),
         );
-        return buildAdminContext(session);
+        return session;
       },
     );
     /**
