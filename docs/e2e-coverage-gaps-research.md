@@ -2,11 +2,12 @@
 
 ## Current state
 
-The old version of this note is stale. The repo now has three real specs plus a setup project:
+The old version of this note is stale. The repo now has four real specs plus a setup project:
 
 - `e2e/embedded-app-home.spec.ts:4-8` loads `SHOPIFY_PREVIEW_URL`, scopes into `iframe[src*="embedded=1"]`, and waits for `s-page`.
 - `e2e/nav-additional-page.spec.ts:4-21` opens the embedded app, then clicks the mirrored Shopify admin chrome link for `Additional page` and asserts the iframe renders `s-page[heading="Additional page"]`.
 - `e2e/generate-product.spec.ts:5-31` clicks the in-app `Generate a product` button, waits for the mutation output block, and checks that `Edit product` appears.
+- `e2e/edit-product.spec.ts:5-42` generates a product, clicks `Edit product` in the iframe, parses the generated product title from the mutation JSON, and asserts the Shopify host surface switches to the product editor by matching both the top-level document title and the host heading.
 - `playwright.config.ts:28-44` runs those specs only inside the `e2e` project, which depends on the `setup` project and always reuses `playwright/.auth/shopify-admin.json`.
 
 That means current coverage is no longer “one smoke test”, but it is still almost entirely authenticated happy-path coverage.
@@ -16,6 +17,7 @@ That means current coverage is no longer “one smoke test”, but it is still a
 - Embedded boot works: Shopify admin preview URL loads, iframe mounts, Polaris/App Bridge boot enough for the app shell to render.
 - Secondary route rendering works when navigation is initiated from Shopify admin chrome.
 - The product-generation happy path works end-to-end: button click → server fn → `shopifyServerFnMiddleware` → `authenticateAdmin` → `ProductRepository` GraphQL mutations → React state render in `src/routes/app.index.tsx:46-58` and `src/routes/app.index.tsx:119-135`.
+- The main App Bridge handoff works for `Edit product`: the iframe click in `src/routes/app.index.tsx:61-68` opens Shopify's product editor in the host admin surface for the exact product just created, not merely some generic editor shell.
 
 ## Harness constraints that matter
 
@@ -87,21 +89,7 @@ Best version of this test:
 4. Assert the iframe URL still contains the auth-critical params (`shop`, `host`, usually `embedded=1`).
 5. Optionally reload and confirm the route still survives auth.
 
-### 3. `Edit product` intent is untested
-
-`src/routes/app.index.tsx:61-68` calls:
-
-```ts
-void shopify.intents.invoke?.("edit:shopify/Product", {
-  value: productId,
-});
-```
-
-The current product spec stops one step early. It proves the button appears, but not that clicking it invokes the expected App Bridge intent with the created product id.
-
-This is a good medium-cost addition because it exercises the main post-create user action without needing to assert full admin navigation. The clean assertion is to stub `window.shopify.intents.invoke` in the iframe, click `Edit product`, then inspect the captured call.
-
-### 4. Product-generation failure UX is untested
+### 3. Product-generation failure UX is untested
 
 The home route has explicit error UI:
 
@@ -133,6 +121,6 @@ If adding more E2E coverage now, I would do it in this order:
 
 1. Add local auth-entry specs for `/`, `/?shop=...`, `/app` without storage state, and invalid `/auth/login` POST.
 2. Add one embedded spec that proves app-side navigation preserves embedded query params, not just outer admin chrome navigation.
-3. Add an `Edit product` intent spy assertion after the existing product-generation flow.
+3. Add one failure-path spec for product generation or invalid embedded session recovery, if we can make the setup deterministic enough to avoid flaky Shopify-side failures.
 
 That sequence closes the biggest coverage holes without taking on OAuth or webhook complexity.
