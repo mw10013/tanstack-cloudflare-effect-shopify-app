@@ -609,19 +609,6 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         shopify.session.getOfflineId(shop),
       ).pipe(Effect.mapError((cause) => new ShopifyError({ message: "Invalid session id", cause })));
     });
-    const graphqlDecode = Effect.fn("Shopify.graphqlDecode")(function* <A>(
-      schema: Schema.Decoder<A>,
-      query: string,
-      options?: { readonly variables?: Record<string, unknown> },
-    ) {
-      const admin = yield* CurrentShopifyAdmin;
-      const { data, errors } = yield* admin.graphql(query, options);
-      if (errors) yield* Effect.fail(new ShopifyError({ message: errors.message ?? "Admin GraphQL request failed", cause: errors }));
-      return yield* Effect.try({
-        try: () => Schema.decodeUnknownSync(schema)(data),
-        catch: (cause) => new ShopifyError({ message: "Admin GraphQL response validation failed", cause }),
-      });
-    });
     return {
       config,
       authenticateAdmin,
@@ -636,7 +623,6 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       ensureValidOfflineSession,
       unauthenticatedAdmin,
       offlineSessionId,
-      graphqlDecode,
     };
   }),
 }) {
