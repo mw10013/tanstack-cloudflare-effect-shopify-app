@@ -6,7 +6,7 @@ test("edit product opens Shopify product editor", async ({ page }) => {
   await page.goto(requiredEnv("SHOPIFY_PREVIEW_URL"));
 
   const frame = page.frameLocator('iframe[src*="embedded=1"]');
-  await expect(frame.locator("s-page")).toBeVisible({ timeout: 30000 });
+  await expect(frame.locator("s-page")).toBeVisible({ timeout: 30_000 });
 
   const productSection = frame.locator(
     's-section[heading="Get started with products"]',

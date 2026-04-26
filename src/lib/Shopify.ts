@@ -252,6 +252,12 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         return session;
       },
     );
+    /**
+     * Loads the shop's offline session and refreshes an expiring token when possible.
+     * Despite the "ensure" name, missing sessions are expected for webhooks such as
+     * retries after uninstall or shop/redact after local session deletion; keep the
+     * name to mirror Shopify's template/helper contract.
+     */
     const ensureValidOfflineSession = Effect.fn("Shopify.ensureValidOfflineSession")(
       function* (shop: Domain.Shop) {
         const loaded = yield* loadSession(yield* offlineSessionId(shop));
@@ -331,9 +337,8 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
      *
      * Returns a Response for non-POST (405), invalid HMAC (401), or other
      * validation failures (400). On success, returns `{ shop, topic, payload,
-     * session?, admin? }` — `session` and `admin` are present only when an
-     * offline row exists for the shop; `ensureValidOfflineSession` refreshes
-     * expiring tokens in place before returning.
+     * session? }`. `ensureValidOfflineSession` refreshes expiring tokens in place
+     * before returning.
      *
      * Mirrors the template's `authenticate.webhook(request)` contract.
      */
@@ -386,7 +391,6 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
           shop,
           payload: JSON.parse(rawBody) as unknown,
           session,
-          admin: session ? buildAdminContext(session) : undefined,
         } as const;
       },
     );
