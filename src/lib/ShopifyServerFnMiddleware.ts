@@ -3,7 +3,8 @@ import { createMiddleware } from "@tanstack/react-start";
 import { Effect } from "effect";
 
 import { CurrentRequest } from "@/lib/CurrentRequest";
-import { Shopify } from "@/lib/Shopify";
+import { ProductRepository } from "@/lib/ProductRepository";
+import { CurrentShopifyAdmin, Shopify } from "@/lib/Shopify";
 
 /**
  * Server-function auth middleware for Shopify embedded requests.
@@ -42,8 +43,16 @@ export const shopifyServerFnMiddleware = createMiddleware({ type: "function" })
           return yield* Effect.fail(auth);
         }
 
+        const runEffect = <A, E>(effect: Effect.Effect<A, E, ProductRepository | CurrentShopifyAdmin>) =>
+          context.runEffect(
+            effect.pipe(
+              Effect.provide(ProductRepository.layer),
+              Effect.provideService(CurrentShopifyAdmin, auth),
+            ),
+          );
+
         return yield* Effect.tryPromise({
-          try: () => next({ context: { admin: auth, session: auth.session } }),
+          try: () => next({ context: { admin: auth, session: auth.session, runEffect } }),
           catch: (cause) => cause,
         });
       }),

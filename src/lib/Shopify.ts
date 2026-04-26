@@ -1,6 +1,6 @@
 import "@shopify/shopify-api/adapters/web-api";
 import * as ShopifyApi from "@shopify/shopify-api";
-import { Config, Context, Effect, Layer, Option, Redacted, Ref, Schema } from "effect";
+import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 
 import * as Domain from "@/lib/Domain";
 import { Repository } from "@/lib/Repository";
@@ -30,6 +30,10 @@ export interface ShopifyAdminContext {
 export type ShopifyAuthenticateAdminResult = ShopifyAdminContext | Response;
 
 export type ShopifyLoginResult = { readonly shop?: string } | Response;
+
+export class CurrentShopifyAdmin extends Context.Service<CurrentShopifyAdmin, ShopifyAdminContext>()(
+  "CurrentShopifyAdmin",
+) {}
 
 const APP_BRIDGE_URL = "https://cdn.shopify.com/shopifycloud/app-bridge.js";
 const POLARIS_URL = "https://cdn.shopify.com/shopifycloud/polaris.js";
@@ -133,7 +137,6 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
     const repository = yield* Repository;
     const config = yield* shopifyConfig;
     const shopify = makeShopifyApi(config);
-    const adminContextRef = yield* Ref.make<Option.Option<ShopifyAdminContext>>(Option.none());
     const storeSession = Effect.fn("Shopify.storeSession")(function* (
       session: ShopifyApi.Session,
     ) {
@@ -531,9 +534,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
           Option.isSome(existingSession) &&
           existingSession.value.isActive(undefined, WITHIN_MILLISECONDS_OF_EXPIRY)
         ) {
-          const ctx = buildAdminContext(existingSession.value);
-          yield* Ref.set(adminContextRef, Option.some(ctx));
-          return ctx;
+          return buildAdminContext(existingSession.value);
         }
 
         const exchanged = yield* Effect.tryPromise({
@@ -565,9 +566,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
         );
         if (exchanged instanceof Response) return exchanged;
         yield* storeSession(exchanged.session);
-        const ctx = buildAdminContext(exchanged.session);
-        yield* Ref.set(adminContextRef, Option.some(ctx));
-        return ctx;
+        return buildAdminContext(exchanged.session);
       },
     );
     const login = Effect.fn("Shopify.login")(function* (request: Request) {
@@ -615,10 +614,7 @@ export class Shopify extends Context.Service<Shopify>()("Shopify", {
       query: string,
       options?: { readonly variables?: Record<string, unknown> },
     ) {
-      const admin = yield* Ref.get(adminContextRef).pipe(
-        Effect.flatMap(Effect.fromOption),
-        Effect.mapError(() => new ShopifyError({ message: "authenticateAdmin must be called before graphqlDecode", cause: undefined })),
-      );
+      const admin = yield* CurrentShopifyAdmin;
       const { data, errors } = yield* admin.graphql(query, options);
       if (errors) yield* Effect.fail(new ShopifyError({ message: errors.message ?? "Admin GraphQL request failed", cause: errors }));
       return yield* Effect.try({
