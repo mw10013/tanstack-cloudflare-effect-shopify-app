@@ -17,13 +17,13 @@
  * since there's no value to import — we only need the side effect of
  * TypeScript loading the module for its augmentation.
  *
- * App Bridge activation: `s-app-nav` is not covered by `@shopify/polaris-types`
- * (it's an App Bridge element). Template uses it untyped and accepts the
- * error (`refs/shopify-app-template/app/routes/app.tsx:20-23`); we augment it
- * locally so this subtree typechecks.
+ * App Bridge activation: types come from `@/lib/shopifyAppBridgeElements`
+ * which bridges `@shopify/app-bridge-types` global JSX into React's JSX
+ * namespace for web components like `s-app-nav` and `ui-save-bar`.
  */
 // oxlint-disable-next-line unicorn/require-module-specifiers -- see JSDoc above
 import type {} from "@shopify/polaris-types";
+import "@/lib/shopifyAppBridgeElements";
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { Effect, Redacted } from "effect";
@@ -31,15 +31,6 @@ import { Effect, Redacted } from "effect";
 import { CurrentRequest } from "@/lib/CurrentRequest";
 import { AppProvider } from "@/components/AppProvider";
 import { Shopify } from "@/lib/Shopify";
-
-declare module "react" {
-  // oxlint-disable-next-line typescript-eslint/no-namespace -- canonical JSX augmentation pattern
-  namespace JSX {
-    interface IntrinsicElements {
-      "s-app-nav": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-    }
-  }
-}
 
 /**
  * Route-boundary Shopify auth for `/app` document requests.

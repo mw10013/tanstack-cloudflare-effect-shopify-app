@@ -6,7 +6,7 @@
     "jsx": "react-jsx",
     "module": "ESNext",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["./worker-configuration.d.ts", "node", "vite/client", "@shopify/polaris-types"],
+    "types": ["./worker-configuration.d.ts", "node", "vite/client", "@shopify/polaris-types", "@shopify/app-bridge-types"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",
